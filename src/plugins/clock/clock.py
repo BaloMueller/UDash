@@ -38,7 +38,7 @@ CLOCK_FACES = [
     }
 ]
 
-DEFAULT_TIMEZONE = "US/Eastern"
+DEFAULT_TIMEZONE = "UTC"
 DEFAULT_CLOCK_FACE = "Gradient Clock"
 
 class Clock(BasePlugin):
