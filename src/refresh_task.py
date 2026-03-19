@@ -245,7 +245,10 @@ class ManualRefresh(RefreshAction):
 
     def execute(self, plugin, device_config, current_dt: datetime):
         """Performs a manual refresh using the stored plugin ID and settings."""
-        return plugin.generate_image(self.plugin_settings, device_config)
+        image = plugin.generate_image(self.plugin_settings, device_config)
+        if image is None:
+            raise RuntimeError(f"Plugin '{self.plugin_id}' failed to generate an image.")
+        return image
 
     def get_refresh_info(self):
         """Return refresh metadata as a dictionary."""
