@@ -112,6 +112,12 @@ class RefreshTask:
                             continue
                         plugin = get_plugin_instance(plugin_config)
                         image = refresh_action.execute(plugin, self.device_config, current_dt)
+
+                        # If execute returns None, the plugin was skipped (not time to refresh)
+                        if image is None:
+                            self.device_config.write_config()
+                            continue
+
                         image_hash = compute_image_hash(image)
 
                         refresh_info = refresh_action.get_refresh_info()
@@ -280,9 +286,8 @@ class PlaylistRefresh(RefreshAction):
             image.save(plugin_image_path)
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
         else:
-            logger.info(f"Not time to refresh plugin instance, using latest image. | plugin_instance: {self.plugin_instance.name}.")
-            # Load the existing image from disk
-            with Image.open(plugin_image_path) as img:
-                image = img.copy()
+            logger.info(f"Not time to refresh plugin instance, skipping. | plugin_instance: {self.plugin_instance.name}.")
+            # Return None to signal that this plugin should be skipped
+            return None
 
         return image
