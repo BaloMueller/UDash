@@ -51,6 +51,12 @@
             refreshImage();
             setInterval(refreshImage, refreshIntervalMs);
         });
+
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                location.reload();
+            }
+        });
     </script>
     <script src="{{ url_for('static', filename='scripts/image_modal.js') }}"></script>
 </head>
