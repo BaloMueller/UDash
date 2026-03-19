@@ -115,11 +115,6 @@ class RefreshTask:
 
                         # If execute returns None, the plugin was skipped (not time to refresh)
                         if image is None:
-                            # Revert playlist index so this plugin is retried next cycle
-                            if isinstance(refresh_action, PlaylistRefresh):
-                                playlist = refresh_action.playlist
-                                if playlist.current_plugin_index is not None:
-                                    playlist.current_plugin_index = (playlist.current_plugin_index - 1) % len(playlist.plugins)
                             self.device_config.write_config()
                             continue
 
@@ -288,6 +283,9 @@ class PlaylistRefresh(RefreshAction):
             logger.info(f"Refreshing plugin instance. | plugin_instance: '{self.plugin_instance.name}'") 
             # Generate a new image
             image = plugin.generate_image(self.plugin_instance.settings, device_config)
+            if image is None:
+                logger.error(f"Plugin '{self.plugin_instance.name}' returned no image. Skipping.")
+                return None
             image.save(plugin_image_path)
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
         else:
