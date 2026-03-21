@@ -40,9 +40,28 @@
         }
 
             /* Inline edit styling */
-            .plugin-instance.editable:hover {
+            .plugin-instance.editable {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
                 cursor: pointer;
+            }
+
+            .plugin-instance.editable:hover {
                 text-decoration: underline;
+            }
+
+            .plugin-instance.editable .instance-edit-icon {
+                width: 20px;
+                height: 20px;
+                opacity: 0.35;
+                transition: opacity 0.2s ease;
+                vertical-align: middle;
+                flex-shrink: 0;
+            }
+
+            .plugin-instance.editable:hover .instance-edit-icon {
+                opacity: 1;
             }
 
         /* Thumbnail Preview Modal */
@@ -536,7 +555,7 @@
                         <div class="plugin-item">
                             <div class="plugin-info" id="{{plugin_instance.name}}">
                                 <img src="{{ url_for('plugin.image', plugin_id=plugin_instance.plugin_id, filename='icon.png') }}" alt="Plugin Icon" class="plugin-icon">
-                                <span class="plugin-instance editable" title="Edit Instance Name" data-playlist="{{ playlist.name }}" data-plugin-id="{{ plugin_instance.plugin_id }}" data-instance="{{ plugin_instance.name }}" onclick="enableInlineEdit(this)">{{ plugin_instance.name }}</span>
+                                <span class="plugin-instance editable" title="Edit Instance Name" data-playlist="{{ playlist.name }}" data-plugin-id="{{ plugin_instance.plugin_id }}" data-instance="{{ plugin_instance.name }}" onclick="enableInlineEdit(this)">{{ plugin_instance.name }}<img src="{{ url_for('static', filename='icons/edit_pencil.png') }}" alt="edit" class="instance-edit-icon"></span>
 
                                 <!-- Thumbnail preview - only show if image has been generated -->
                                 {% if plugin_instance.latest_refresh_time %}
