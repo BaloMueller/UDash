@@ -403,7 +403,9 @@
             <div class="playlist-item {% if playlist.name == playlist_config.active_playlist %}active{% endif %}">
                     <div class="playlist-header">
                         <span class="playlist-title">{{ playlist.name }}</span>
-                        <button class="edit-button" onclick="openEditModal('{{ playlist.name }}', '{{ playlist.start_time }}','{{ playlist.end_time }}')"><img src="{{ url_for('static', filename='icons/settings.png') }}" alt="edit playlist" class="action-icon"></button>
+                        <button class="edit-button" onclick="openEditModal('{{ playlist.name }}', '{{ playlist.start_time }}','{{ playlist.end_time }}')" title="Edit Playlist">
+                            <img src="{{ url_for('static', filename='icons/settings.png') }}" alt="edit playlist" class="action-icon">
+                        </button>
                     </div>
                     <!-- Plugin List -->
                     <div class="plugin-list">
@@ -441,8 +443,8 @@
                                     </span>
                                 {% endif %}
 
-                                <a href="{{ url_for('plugin.plugin_page', plugin_id=plugin_instance.plugin_id) }}?instance={{ plugin_instance.name }}" class="edit-button">
-                                    <img src="{{ url_for('static', filename='icons/edit.png') }}" title="Edit Instance Settings" alt="edit plugin" class="action-icon">
+                                <a href="{{ url_for('plugin.plugin_page', plugin_id=plugin_instance.plugin_id) }}?instance={{ plugin_instance.name }}" title="Edit Instance Settings" class="edit-button">
+                                    <img src="{{ url_for('static', filename='icons/edit.png') }}" alt="edit plugin" class="action-icon">
                                 </a>
                                 <button class="edit-button refresh-settings-btn"
                                         title="Edit Refresh Settings"
