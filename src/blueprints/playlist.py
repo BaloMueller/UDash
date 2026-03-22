@@ -237,6 +237,11 @@ def rename_plugin_instance():
     if existing and existing is not plugin_instance:
         return jsonify({"error": f"Plugin instance '{new_name}' already exists"}), 400
 
+    # Also enforce global uniqueness across all playlists, consistent with add_plugin / plugin_page
+    global_existing = playlist_manager.find_plugin(plugin_id, new_name)
+    if global_existing and global_existing is not plugin_instance:
+        return jsonify({"error": f"Plugin instance '{new_name}' already exists"}), 400
+
     # rename image file if present — perform filesystem update first, then persist
     try:
         old_image = plugin_instance.get_image_path()
