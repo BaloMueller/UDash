@@ -53,6 +53,13 @@
                 align-items: center;
                 gap: 4px;
                 cursor: pointer;
+                /* make button look like plain inline text */
+                background: none;
+                border: none;
+                padding: 0;
+                margin: 0;
+                font: inherit;
+                color: inherit;
             }
 
             .plugin-instance.editable:hover {
@@ -573,7 +580,7 @@
                         <div class="plugin-item">
                             <div class="plugin-info" id="{{plugin_instance.name}}">
                                 <img src="{{ url_for('plugin.image', plugin_id=plugin_instance.plugin_id, filename='icon.png') }}" alt="Plugin Icon" class="plugin-icon">
-                                <span class="plugin-instance editable" title="Edit Instance Name" data-playlist="{{ playlist.name }}" data-plugin-id="{{ plugin_instance.plugin_id }}" data-instance="{{ plugin_instance.name }}" onclick="enableInlineEdit(this)">{{ plugin_instance.name }}<img src="{{ url_for('static', filename='icons/edit_pencil.png') }}" alt="edit" class="instance-edit-icon"></span>
+                                <button type="button" class="plugin-instance editable" title="Edit Instance Name" data-playlist="{{ playlist.name }}" data-plugin-id="{{ plugin_instance.plugin_id }}" data-instance="{{ plugin_instance.name }}" onclick="enableInlineEdit(this)">{{ plugin_instance.name }}<img src="{{ url_for('static', filename='icons/edit_pencil.png') }}" alt="edit" class="instance-edit-icon"></button>
 
                                 <!-- Thumbnail preview - only show if image has been generated -->
                                 {% if plugin_instance.latest_refresh_time %}
