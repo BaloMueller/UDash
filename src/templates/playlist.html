@@ -232,47 +232,9 @@
                     });
                     const result = await resp.json();
                     if (resp.ok) {
-                        // update UI: preserve any child elements (e.g., edit icon) and only update the text node
-                        const textNode = Array.from(el.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
-                        if (textNode) {
-                            textNode.nodeValue = rawNew;
-                        } else {
-                            const newTextNode = document.createTextNode(rawNew);
-                            if (el.firstChild) {
-                                el.insertBefore(newTextNode, el.firstChild);
-                            } else {
-                                el.appendChild(newTextNode);
-                            }
-                        }
-                        el.dataset.instance = newName;
-
-                        // update any elements inside this plugin-item that reference the instance name in data-instance
-                        const pluginItem = el.closest('.plugin-item');
-                        if (pluginItem) {
-                            pluginItem.querySelectorAll('[data-instance]').forEach(node => {
-                                if (node.dataset.instance && node.dataset.instance === oldName) {
-                                    node.dataset.instance = newName;
-                                }
-                            });
-
-                            // update edit link query param ?instance=
-                            const editLink = pluginItem.querySelector('a.edit-button');
-                            if (editLink && editLink.href) {
-                                try {
-                                    const url = new URL(editLink.href);
-                                    url.searchParams.set('instance', newName);
-                                    editLink.href = url.toString();
-                                } catch (e) {
-                                    // fallback: string replace
-                                    editLink.href = editLink.href.replace('instance=' + encodeURIComponent(rawOldName), 'instance=' + encodeURIComponent(rawNew));
-                                }
-                            }
-                        }
-
-                        isClosed = true;
-                        input.remove();
-                        el.style.display = '';
-                        showResponseModal('success', result.message || 'Renamed');
+                        // reload the page to avoid leaving any controls with stale server-rendered attributes
+                        sessionStorage.setItem("storedMessage", JSON.stringify({ type: "success", text: result.message || 'Renamed' }));
+                        location.reload();
                     } else {
                         // include server diagnostic info if present
                         const diag = result && result.existing_instances ? ` Existing: ${result.existing_instances.join(', ')}` : '';
