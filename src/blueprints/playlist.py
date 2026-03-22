@@ -237,24 +237,46 @@ def rename_plugin_instance():
     if existing and existing is not plugin_instance:
         return jsonify({"error": f"Plugin instance '{new_name}' already exists"}), 400
 
-    # rename image file if present
+    # rename image file if present — perform filesystem update first, then persist
     try:
         old_image = plugin_instance.get_image_path()
-        # set new name on the object so get_image_path() will return new filename
-        plugin_instance.name = new_name
-        new_image = plugin_instance.get_image_path()
+
+        # compute new image path without mutating the persistent object yet
+        original_name = plugin_instance.name
+        try:
+            plugin_instance.name = new_name
+            new_image = plugin_instance.get_image_path()
+        finally:
+            # revert to original in-memory name until filesystem operations succeed
+            plugin_instance.name = original_name
 
         plugin_image_dir = device_config.plugin_image_dir
         old_path = os.path.join(plugin_image_dir, old_image)
         new_path = os.path.join(plugin_image_dir, new_image)
+
         if os.path.exists(old_path):
+            # fail early if target already exists to avoid overwriting
+            if os.path.exists(new_path):
+                return jsonify({"error": f"Target image file already exists: {new_image}"}), 400
+
             try:
                 os.rename(old_path, new_path)
-            except Exception:
-                # if rename fails, continue but log
-                logger.exception(f"Failed to rename plugin image {old_path} -> {new_path}")
+            except OSError as e:
+                # handle cross-device rename by copying then removing
+                import errno, shutil
+                if getattr(e, 'errno', None) == errno.EXDEV:
+                    try:
+                        shutil.copy2(old_path, new_path)
+                        os.remove(old_path)
+                    except Exception:
+                        logger.exception(f"Failed to copy plugin image {old_path} -> {new_path}")
+                        return jsonify({"error": "Failed to rename plugin image file"}), 500
+                else:
+                    logger.exception(f"Failed to rename plugin image {old_path} -> {new_path}")
+                    return jsonify({"error": "Failed to rename plugin image file"}), 500
 
-        # persist config
+        # filesystem update succeeded (or there was no image) — now update in-memory name and persist
+        plugin_instance.name = new_name
         device_config.write_config()
     except Exception as e:
         logger.exception("EXCEPTION CAUGHT: " + str(e))
