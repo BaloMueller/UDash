@@ -220,11 +220,13 @@ def rename_plugin_instance():
         candidates = [p for p in playlist.plugins if p.plugin_id == plugin_id and _remove_diacritics(_normalize(p.name)).lower() == base_old]
         if len(candidates) == 1:
             plugin_instance = candidates[0]
-        else:
-            # try contains/starts-with heuristic if single match
-            candidates2 = [p for p in playlist.plugins if p.plugin_id == plugin_id and base_old in _remove_diacritics(_normalize(p.name)).lower()]
-            if len(candidates2) == 1:
-                plugin_instance = candidates2[0]
+        elif len(candidates) > 1:
+            # Ambiguous match: do not guess — return an error listing matches
+            matched = [p.name for p in candidates]
+            return jsonify({
+                "error": f"Ambiguous plugin instance name '{old_name}'",
+                "matches": matched
+            }), 400
 
     if not plugin_instance:
         # collect existing instance names for this plugin to help debugging
