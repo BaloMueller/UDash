@@ -1,0 +1,10 @@
+{
+    "wifi_ssid": "YourNetworkSSID",
+    "wifi_password": "YourNetworkPassword",
+    "inkypi_url": "http://inkypi.local",
+    "display_type": "epd2in13v2",
+    "refresh_interval": 300,
+    "ap_ssid": "InkyPi-ESP32",
+    "ap_password": "inkypi123",
+    "rotation": 0
+}
