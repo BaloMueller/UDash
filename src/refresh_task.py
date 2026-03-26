@@ -302,26 +302,14 @@ class PlaylistRefresh(RefreshAction):
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
             return image
 
-        # Not time to regenerate — load and return the cached image from disk to keep
-        # playlist rotation working. Return None only for error/skip conditions.
+        # Not time to regenerate — return None so the caller skips the display
+        # update.  The rotation index has already been advanced by
+        # get_next_plugin(), so the *next* cycle will evaluate the following
+        # plugin in the playlist.  This avoids unnecessary e-paper refreshes
+        # (which cause visible flashing) when no plugin has new content.
         logger.info(
-            f"Not time to refresh plugin instance; using cached image. | plugin_instance: {self.plugin_instance.name}."
+            f"Not time to refresh plugin instance; skipping display update. "
+            f"| plugin_instance: {self.plugin_instance.name} "
+            f"| latest_refresh: {self.plugin_instance.latest_refresh_time}"
         )
-
-        if not os.path.exists(plugin_image_path):
-            logger.error(
-                f"Cached image for plugin instance is missing; cannot display. | plugin_instance: {self.plugin_instance.name} | path: {plugin_image_path}"
-            )
-            return None
-
-        try:
-            image = Image.open(plugin_image_path)
-            # Ensure the image data is actually loaded before returning
-            image.load()
-            # Do not update plugin_instance.latest_refresh_time — we are using cached content.
-            return image
-        except Exception as exc:
-            logger.exception(
-                f"Failed to load cached image for plugin instance; skipping. | plugin_instance: {self.plugin_instance.name}, path: {plugin_image_path}"
-            )
-            return None
+        return None

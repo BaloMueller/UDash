@@ -307,7 +307,13 @@ class PluginInstance:
                 if current_time.tzinfo is not None:
                     scheduled_dt = scheduled_dt.replace(tzinfo=current_time.tzinfo)
 
-                return current_time >= scheduled_dt
+                result = current_time >= scheduled_dt
+                logger.debug(
+                    f"should_refresh({self.name}): never refreshed, scheduled={scheduled_time_str}, "
+                    f"current_time={current_time}, result={result}"
+                )
+                return result
+            logger.debug(f"should_refresh({self.name}): never refreshed, no schedule, returning True")
             return True
 
         # Check for interval-based refresh
@@ -323,7 +329,12 @@ class PluginInstance:
                 elif ldt.tzinfo is not None and current_time.tzinfo is not None:
                     ldt = ldt.astimezone(current_time.tzinfo)
 
-                if (current_time - ldt) >= timedelta(seconds=interval):
+                elapsed = current_time - ldt
+                if elapsed >= timedelta(seconds=interval):
+                    logger.debug(
+                        f"should_refresh({self.name}): interval elapsed "
+                        f"({elapsed.total_seconds():.0f}s >= {interval}s), returning True"
+                    )
                     return True
 
         # Check for scheduled refresh (HH:MM format)
@@ -351,8 +362,17 @@ class PluginInstance:
             # Determine if a refresh is needed based on scheduled time and last refresh
             if (latest_refresh_date < current_date and current_time >= scheduled_dt) or \
                (latest_refresh_date == current_date and ldt < scheduled_dt <= current_time):
+                logger.debug(
+                    f"should_refresh({self.name}): scheduled time reached "
+                    f"(scheduled={scheduled_time_str}, latest_refresh_date={latest_refresh_date}, "
+                    f"current_date={current_date}), returning True"
+                )
                 return True
 
+        logger.debug(
+            f"should_refresh({self.name}): no refresh needed "
+            f"| latest_refresh={latest_refresh_dt} | refresh_settings={self.refresh}"
+        )
         return False
 
     def get_image_path(self):
