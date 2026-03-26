@@ -130,7 +130,7 @@ class RefreshTask:
                             logger.info(f"Updating display. | refresh_info: {refresh_info}")
                             self.display_manager.display_image(image, image_settings=plugin.config.get("image_settings", []))
                         else:
-                            logger.info(f"Image already displayed, skipping refresh. | refresh_info: {refresh_info}")
+                            logger.debug(f"Image already displayed, skipping refresh. | refresh_info: {refresh_info}")
 
                         # update latest refresh data in the device config
                         self.device_config.refresh_info = RefreshInfo(**refresh_info)
@@ -303,7 +303,7 @@ class PlaylistRefresh(RefreshAction):
             return image
 
         # Not time to regenerate — attempt to load a cached image for display rotation.
-        logger.info(f"Using cached image for plugin instance if available. | plugin_instance: {self.plugin_instance.name}.")
+        logger.debug(f"Using cached image for plugin instance if available. | plugin_instance: {self.plugin_instance.name}.")
         if os.path.exists(plugin_image_path):
             try:
                 image = Image.open(plugin_image_path)
@@ -313,7 +313,7 @@ class PlaylistRefresh(RefreshAction):
                 logger.exception(f"Failed to load cached image for '{self.plugin_instance.name}', will attempt regeneration.")
 
         # If cached image not present or failed to load, fall back to regenerating the image.
-        logger.info(f"Cached image missing or unreadable; regenerating. | plugin_instance: {self.plugin_instance.name}")
+        logger.debug(f"Cached image missing or unreadable; regenerating. | plugin_instance: {self.plugin_instance.name}")
         image = plugin.generate_image(self.plugin_instance.settings, device_config)
         if image is None:
             logger.error(f"Plugin '{self.plugin_instance.name}' returned no image on regeneration. Skipping.")
