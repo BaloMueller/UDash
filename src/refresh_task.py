@@ -170,11 +170,17 @@ class RefreshTask:
         return datetime.now(pytz.timezone(tz_str))
 
     def _determine_next_plugin(self, playlist_manager, latest_refresh_info, current_dt):
-        """Determines the next plugin to refresh based on the active playlist, plugin cycle interval, and current time."""
+        """Determines the next plugin to refresh by scanning all plugins in the active playlist.
+
+        Iterates every plugin starting from the one after the last refreshed index
+        (round-robin fairness) and returns the first plugin whose should_refresh()
+        returns True.  If no plugin is due, returns (None, None) so the display
+        is not updated.
+        """
         playlist = playlist_manager.determine_active_playlist(current_dt)
         if not playlist:
             playlist_manager.active_playlist = None
-            logger.info(f"No active playlist determined.")
+            logger.info("No active playlist determined.")
             return None, None
 
         playlist_manager.active_playlist = playlist.name
@@ -182,25 +188,27 @@ class RefreshTask:
             logger.info(f"Active playlist '{playlist.name}' has no plugins.")
             return None, None
 
-        latest_refresh_dt = latest_refresh_info.get_refresh_datetime()
-        plugin_cycle_interval = self.device_config.get_config("plugin_cycle_interval_seconds", default=3600)
-        should_refresh = PlaylistManager.should_refresh(latest_refresh_dt, plugin_cycle_interval, current_dt)
+        # Scan every plugin in the playlist, starting after the last-refreshed
+        # index so that no single plugin starves the others.
+        num_plugins = len(playlist.plugins)
+        start_index = ((playlist.current_plugin_index or -1) + 1) % num_plugins
 
-        if not should_refresh:
-            latest_refresh_str = latest_refresh_dt.strftime('%Y-%m-%d %H:%M:%S') if latest_refresh_dt else "None"
-            logger.info(f"Not time to update display. | latest_update: {latest_refresh_str} | plugin_cycle_interval: {plugin_cycle_interval}")
-            return None, None
+        for i in range(num_plugins):
+            idx = (start_index + i) % num_plugins
+            plugin = playlist.plugins[idx]
+            if plugin.should_refresh(current_dt):
+                playlist.current_plugin_index = idx
+                logger.info(
+                    f"Plugin due for refresh. | active_playlist: {playlist.name} "
+                    f"| plugin_instance: {plugin.name} | index: {idx}"
+                )
+                return playlist, plugin
 
-        # Select the next plugin in the playlist for display rotation. Whether its image
-        # needs to be regenerated vs using a cached image should be decided during
-        # the refresh execution phase, not here.
-        plugin = playlist.get_next_plugin()
-        if not plugin:
-            logger.info(f"Failed to obtain next plugin from playlist '{playlist.name}'.")
-            return None, None
-
-        logger.info(f"Determined next plugin. | active_playlist: {playlist.name} | plugin_instance: {plugin.name}")
-        return playlist, plugin
+        logger.info(
+            f"No plugins due for refresh in playlist '{playlist.name}'. "
+            f"| checked: {num_plugins} plugin(s)"
+        )
+        return None, None
     
     def log_system_stats(self):
         metrics = {
