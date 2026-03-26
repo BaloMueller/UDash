@@ -296,32 +296,61 @@ class PluginInstance:
     def should_refresh(self, current_time):
         """Checks whether the plugin should be refreshed based on its refresh settings and the current time."""
         latest_refresh_dt = self.get_latest_refresh_dt()
-
         # If never refreshed, check scheduled time before allowing refresh
         if not latest_refresh_dt:
             if "scheduled" in self.refresh:
                 scheduled_time_str = self.refresh.get("scheduled")
                 scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
-                return current_time.time() >= scheduled_time
+
+                # Build a scheduled datetime on the current date and align tzinfo with current_time
+                scheduled_dt = datetime.combine(current_time.date(), scheduled_time)
+                if current_time.tzinfo is not None:
+                    scheduled_dt = scheduled_dt.replace(tzinfo=current_time.tzinfo)
+
+                return current_time >= scheduled_dt
             return True
 
         # Check for interval-based refresh
         if "interval" in self.refresh:
             interval = self.refresh.get("interval")
-            if interval and (current_time - latest_refresh_dt) >= timedelta(seconds=interval):
-                return True
+            if interval:
+                ldt = latest_refresh_dt
+                # Normalize latest refresh to current_time's tz-naive/aware state
+                if ldt.tzinfo is None and current_time.tzinfo is not None:
+                    ldt = ldt.replace(tzinfo=current_time.tzinfo)
+                elif ldt.tzinfo is not None and current_time.tzinfo is None:
+                    ldt = ldt.replace(tzinfo=None)
+                elif ldt.tzinfo is not None and current_time.tzinfo is not None:
+                    ldt = ldt.astimezone(current_time.tzinfo)
+
+                if (current_time - ldt) >= timedelta(seconds=interval):
+                    return True
 
         # Check for scheduled refresh (HH:MM format)
         if "scheduled" in self.refresh:
             scheduled_time_str = self.refresh.get("scheduled")
             scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
-            
-            latest_refresh_date = latest_refresh_dt.date()
+
+            # Build a scheduled datetime for today and align tzinfo with current_time
+            scheduled_dt = datetime.combine(current_time.date(), scheduled_time)
+            if current_time.tzinfo is not None:
+                scheduled_dt = scheduled_dt.replace(tzinfo=current_time.tzinfo)
+
+            # Normalize latest_refresh_dt into current_time's timezone/naive state for safe comparison
+            ldt = latest_refresh_dt
+            if ldt.tzinfo is None and current_time.tzinfo is not None:
+                ldt = ldt.replace(tzinfo=current_time.tzinfo)
+            elif ldt.tzinfo is not None and current_time.tzinfo is None:
+                ldt = ldt.replace(tzinfo=None)
+            elif ldt.tzinfo is not None and current_time.tzinfo is not None:
+                ldt = ldt.astimezone(current_time.tzinfo)
+
+            latest_refresh_date = ldt.date()
             current_date = current_time.date()
 
             # Determine if a refresh is needed based on scheduled time and last refresh
-            if (latest_refresh_date < current_date and current_time.time() >= scheduled_time) or \
-            (latest_refresh_date == current_date and latest_refresh_dt.time() < scheduled_time <= current_time.time()):
+            if (latest_refresh_date < current_date and current_time >= scheduled_dt) or \
+               (latest_refresh_date == current_date and ldt < scheduled_dt <= current_time):
                 return True
 
         return False

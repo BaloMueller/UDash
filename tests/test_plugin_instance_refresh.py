@@ -70,3 +70,21 @@ def test_scheduled_refresh_when_latest_refresh_varies():
     p = make_plugin(refresh={"scheduled": "08:00"}, latest_refresh_time=latest.isoformat())
     now = datetime(2022, 1, 2, 8, 0, 0)
     assert p.should_refresh(now) is True
+
+
+def test_never_refreshed_scheduled_with_tz_aware_current_time():
+    # when current_time is timezone-aware we should not raise and should compare correctly
+    p = make_plugin(refresh={"scheduled": "14:00"})
+    now = datetime(2022, 1, 2, 14, 0, 0, tzinfo=timezone.utc)
+    assert p.should_refresh(now) is True
+
+    now = datetime(2022, 1, 2, 13, 59, 0, tzinfo=timezone.utc)
+    assert p.should_refresh(now) is False
+
+
+def test_scheduled_refresh_timezone_aware_latest_and_current():
+    # both latest and current are timezone-aware
+    latest = datetime(2022, 1, 1, 23, 59, 0, tzinfo=timezone.utc)
+    p = make_plugin(refresh={"scheduled": "08:00"}, latest_refresh_time=latest.isoformat())
+    now = datetime(2022, 1, 2, 8, 0, 0, tzinfo=timezone.utc)
+    assert p.should_refresh(now) is True
