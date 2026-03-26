@@ -302,22 +302,26 @@ class PlaylistRefresh(RefreshAction):
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
             return image
 
-        # Not time to regenerate — attempt to load a cached image for display rotation.
-        logger.debug(f"Using cached image for plugin instance if available. | plugin_instance: {self.plugin_instance.name}.")
-        if os.path.exists(plugin_image_path):
-            try:
-                image = Image.open(plugin_image_path)
-                # Do not update plugin_instance.latest_refresh_time — we are using cached content.
-                return image
-            except Exception:
-                logger.exception(f"Failed to load cached image for '{self.plugin_instance.name}', will attempt regeneration.")
+        # Not time to regenerate — load and return the cached image from disk to keep
+        # playlist rotation working. Return None only for error/skip conditions.
+        logger.info(
+            f"Not time to refresh plugin instance; using cached image. | plugin_instance: {self.plugin_instance.name}."
+        )
 
-        # If cached image not present or failed to load, fall back to regenerating the image.
-        logger.debug(f"Cached image missing or unreadable; regenerating. | plugin_instance: {self.plugin_instance.name}")
-        image = plugin.generate_image(self.plugin_instance.settings, device_config)
-        if image is None:
-            logger.error(f"Plugin '{self.plugin_instance.name}' returned no image on regeneration. Skipping.")
+        if not os.path.exists(plugin_image_path):
+            logger.error(
+                f"Cached image for plugin instance is missing; cannot display. | plugin_instance: {self.plugin_instance.name} | path: {plugin_image_path}"
+            )
             return None
-        image.save(plugin_image_path)
-        self.plugin_instance.latest_refresh_time = current_dt.isoformat()
-        return image
+
+        try:
+            image = Image.open(plugin_image_path)
+            # Ensure the image data is actually loaded before returning
+            image.load()
+            # Do not update plugin_instance.latest_refresh_time — we are using cached content.
+            return image
+        except Exception as exc:
+            logger.exception(
+                f"Failed to load cached image for plugin instance; skipping. | plugin_instance: {self.plugin_instance.name}, path: {plugin_image_path}"
+            )
+            return None
