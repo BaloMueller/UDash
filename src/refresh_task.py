@@ -103,7 +103,10 @@ class RefreshTask:
                         logger.info(f"Running interval refresh check. | current_time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}")
                         playlist, plugin_instance = self._determine_next_plugin(playlist_manager, latest_refresh, current_dt)
                         if plugin_instance:
-                            refresh_action = PlaylistRefresh(playlist, plugin_instance, force=True)
+                            # Do not force regeneration here; let the PlaylistRefresh decide whether to
+                            # regenerate the plugin's image or load the cached image. This keeps
+                            # display rotation independent from image regeneration.
+                            refresh_action = PlaylistRefresh(playlist, plugin_instance, force=False)
 
                     if refresh_action:
                         plugin_config = self.device_config.get_plugin(refresh_action.get_plugin_id())
@@ -188,18 +191,16 @@ class RefreshTask:
             logger.info(f"Not time to update display. | latest_update: {latest_refresh_str} | plugin_cycle_interval: {plugin_cycle_interval}")
             return None, None
 
-        # Loop through all plugins in the playlist to find one that needs refreshing
-        num_plugins = len(playlist.plugins)
-        for _ in range(num_plugins):
-            plugin = playlist.get_next_plugin()
-            if plugin.should_refresh(current_dt):
-                logger.info(f"Determined next plugin. | active_playlist: {playlist.name} | plugin_instance: {plugin.name}")
-                return playlist, plugin
-            else:
-                logger.info(f"Plugin '{plugin.name}' not due for refresh, skipping.")
+        # Select the next plugin in the playlist for display rotation. Whether its image
+        # needs to be regenerated vs using a cached image should be decided during
+        # the refresh execution phase, not here.
+        plugin = playlist.get_next_plugin()
+        if not plugin:
+            logger.info(f"Failed to obtain next plugin from playlist '{playlist.name}'.")
+            return None, None
 
-        logger.info(f"No plugins in playlist '{playlist.name}' need refreshing.")
-        return None, None
+        logger.info(f"Determined next plugin. | active_playlist: {playlist.name} | plugin_instance: {plugin.name}")
+        return playlist, plugin
     
     def log_system_stats(self):
         metrics = {
@@ -299,9 +300,24 @@ class PlaylistRefresh(RefreshAction):
                 return None
             image.save(plugin_image_path)
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
-        else:
-            logger.info(f"Not time to refresh plugin instance, skipping. | plugin_instance: {self.plugin_instance.name}.")
-            # Return None to signal that this plugin should be skipped
-            return None
+            return image
 
+        # Not time to regenerate — attempt to load a cached image for display rotation.
+        logger.info(f"Using cached image for plugin instance if available. | plugin_instance: {self.plugin_instance.name}.")
+        if os.path.exists(plugin_image_path):
+            try:
+                image = Image.open(plugin_image_path)
+                # Do not update plugin_instance.latest_refresh_time — we are using cached content.
+                return image
+            except Exception:
+                logger.exception(f"Failed to load cached image for '{self.plugin_instance.name}', will attempt regeneration.")
+
+        # If cached image not present or failed to load, fall back to regenerating the image.
+        logger.info(f"Cached image missing or unreadable; regenerating. | plugin_instance: {self.plugin_instance.name}")
+        image = plugin.generate_image(self.plugin_instance.settings, device_config)
+        if image is None:
+            logger.error(f"Plugin '{self.plugin_instance.name}' returned no image on regeneration. Skipping.")
+            return None
+        image.save(plugin_image_path)
+        self.plugin_instance.latest_refresh_time = current_dt.isoformat()
         return image
