@@ -172,10 +172,12 @@ class RefreshTask:
     def _determine_next_plugin(self, playlist_manager, latest_refresh_info, current_dt):
         """Determines the next plugin to refresh by scanning all plugins in the active playlist.
 
-        Iterates every plugin starting from the one after the last refreshed index
-        (round-robin fairness) and returns the first plugin whose should_refresh()
-        returns True.  If no plugin is due, returns (None, None) so the display
-        is not updated.
+        Collects every plugin whose should_refresh() returns True, computes each
+        one's effective due datetime, and selects the plugin that has been overdue
+        the longest (oldest due time).  Ties are broken by playlist order starting
+        from the round-robin index for fairness.
+
+        If no plugin is due, returns (None, None) so the display is not updated.
         """
         playlist = playlist_manager.determine_active_playlist(current_dt)
         if not playlist:
@@ -188,27 +190,43 @@ class RefreshTask:
             logger.info(f"Active playlist '{playlist.name}' has no plugins.")
             return None, None
 
-        # Scan every plugin in the playlist, starting after the last-refreshed
-        # index so that no single plugin starves the others.
+        # Collect all due plugins with their effective due datetimes
         num_plugins = len(playlist.plugins)
         start_index = ((playlist.current_plugin_index or -1) + 1) % num_plugins
+        due_plugins = []
 
         for i in range(num_plugins):
             idx = (start_index + i) % num_plugins
             plugin = playlist.plugins[idx]
             if plugin.should_refresh(current_dt):
-                playlist.current_plugin_index = idx
-                logger.info(
-                    f"Plugin due for refresh. | active_playlist: {playlist.name} "
-                    f"| plugin_instance: {plugin.name} | index: {idx}"
+                due_dt = plugin.get_due_datetime(current_dt)
+                due_plugins.append((due_dt, i, idx, plugin))  # i = scan order for tie-breaking
+                logger.debug(
+                    f"Plugin due: {plugin.name} | due_datetime: {due_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"| overdue_seconds: {(current_dt - due_dt).total_seconds():.0f}"
                 )
-                return playlist, plugin
 
+        if not due_plugins:
+            logger.info(
+                f"No plugins due for refresh in playlist '{playlist.name}'. "
+                f"| checked: {num_plugins} plugin(s)"
+            )
+            return None, None
+
+        # Select the plugin with the oldest due time (most overdue).
+        # Ties broken by scan order (round-robin fairness).
+        due_plugins.sort(key=lambda x: (x[0], x[1]))
+        selected_due_dt, _, selected_idx, selected_plugin = due_plugins[0]
+
+        playlist.current_plugin_index = selected_idx
         logger.info(
-            f"No plugins due for refresh in playlist '{playlist.name}'. "
-            f"| checked: {num_plugins} plugin(s)"
+            f"Selected plugin for refresh. | active_playlist: {playlist.name} "
+            f"| plugin_instance: {selected_plugin.name} | index: {selected_idx} "
+            f"| due_datetime: {selected_due_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"| overdue_seconds: {(current_dt - selected_due_dt).total_seconds():.0f} "
+            f"| total_due_plugins: {len(due_plugins)}"
         )
-        return None, None
+        return playlist, selected_plugin
     
     def log_system_stats(self):
         metrics = {

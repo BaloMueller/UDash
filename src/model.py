@@ -375,6 +375,60 @@ class PluginInstance:
         )
         return False
 
+    def get_due_datetime(self, current_time):
+        """Computes the effective due datetime for this plugin.
+
+        For scheduled plugins: today's scheduled time (or yesterday's if the
+        plugin has never been refreshed and the scheduled time has passed).
+        For interval plugins: latest_refresh_time + interval.
+        For never-refreshed non-scheduled plugins: datetime.min (highest priority).
+
+        Returns a timezone-aware or naive datetime matching current_time.
+        """
+        latest_refresh_dt = self.get_latest_refresh_dt()
+
+        # --- scheduled ---
+        if "scheduled" in self.refresh:
+            scheduled_time_str = self.refresh.get("scheduled")
+            scheduled_time = datetime.strptime(scheduled_time_str, "%H:%M").time()
+            scheduled_dt = datetime.combine(current_time.date(), scheduled_time)
+            if current_time.tzinfo is not None:
+                scheduled_dt = scheduled_dt.replace(tzinfo=current_time.tzinfo)
+
+            if not latest_refresh_dt:
+                # Never refreshed ? due since today's scheduled time
+                return scheduled_dt
+
+            # Normalize latest_refresh_dt timezone
+            ldt = latest_refresh_dt
+            if ldt.tzinfo is None and current_time.tzinfo is not None:
+                ldt = ldt.replace(tzinfo=current_time.tzinfo)
+            elif ldt.tzinfo is not None and current_time.tzinfo is not None:
+                ldt = ldt.astimezone(current_time.tzinfo)
+
+            # If last refresh was before today's scheduled time, due time is today's scheduled time
+            if ldt < scheduled_dt <= current_time:
+                return scheduled_dt
+            # If last refresh was on a previous day, due time is today's scheduled time
+            if ldt.date() < current_time.date() and current_time >= scheduled_dt:
+                return scheduled_dt
+
+        # --- interval ---
+        if "interval" in self.refresh:
+            interval = self.refresh.get("interval")
+            if interval and latest_refresh_dt:
+                ldt = latest_refresh_dt
+                if ldt.tzinfo is None and current_time.tzinfo is not None:
+                    ldt = ldt.replace(tzinfo=current_time.tzinfo)
+                elif ldt.tzinfo is not None and current_time.tzinfo is not None:
+                    ldt = ldt.astimezone(current_time.tzinfo)
+                return ldt + timedelta(seconds=interval)
+
+        # Never refreshed, no schedule ? due since the beginning of time
+        if current_time.tzinfo is not None:
+            return datetime.min.replace(tzinfo=current_time.tzinfo)
+        return datetime.min
+
     def get_image_path(self):
         """Formats the image path for this plugin instance."""
         return f"{self.plugin_id}_{self.name.replace(' ', '_')}.png"
