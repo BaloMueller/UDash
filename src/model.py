@@ -403,6 +403,8 @@ class PluginInstance:
             ldt = latest_refresh_dt
             if ldt.tzinfo is None and current_time.tzinfo is not None:
                 ldt = ldt.replace(tzinfo=current_time.tzinfo)
+            elif ldt.tzinfo is not None and current_time.tzinfo is None:
+                ldt = ldt.replace(tzinfo=None)
             elif ldt.tzinfo is not None and current_time.tzinfo is not None:
                 ldt = ldt.astimezone(current_time.tzinfo)
 
@@ -420,6 +422,8 @@ class PluginInstance:
                 ldt = latest_refresh_dt
                 if ldt.tzinfo is None and current_time.tzinfo is not None:
                     ldt = ldt.replace(tzinfo=current_time.tzinfo)
+                elif ldt.tzinfo is not None and current_time.tzinfo is None:
+                    ldt = ldt.replace(tzinfo=None)
                 elif ldt.tzinfo is not None and current_time.tzinfo is not None:
                     ldt = ldt.astimezone(current_time.tzinfo)
                 return ldt + timedelta(seconds=interval)
