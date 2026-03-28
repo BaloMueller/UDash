@@ -127,6 +127,40 @@
         return hasCoord(value) ? Number(value) : fallback;
     }
 
+    /** Validate lat/long inputs. Returns true if valid or both empty. */
+    function validateCoordInputs() {
+        const latVal = document.getElementById('latitude').value.trim();
+        const longVal = document.getElementById('longitude').value.trim();
+
+        // Both empty is fine (no location set yet)
+        if (latVal === '' && longVal === '') {
+            return true;
+        }
+
+        if (latVal === '' || longVal === '') {
+            showResponseModal('failure', 'Error! Both latitude and longitude are required.');
+            return false;
+        }
+
+        if (!hasCoord(latVal) || !hasCoord(longVal)) {
+            showResponseModal('failure', 'Error! Latitude and longitude must be valid numbers.');
+            return false;
+        }
+
+        const lat = Number(latVal);
+        const long = Number(longVal);
+        if (lat < -90 || lat > 90) {
+            showResponseModal('failure', 'Error! Latitude must be between -90 and 90.');
+            return false;
+        }
+        if (long < -180 || long > 180) {
+            showResponseModal('failure', 'Error! Longitude must be between -180 and 180.');
+            return false;
+        }
+
+        return true;
+    }
+
     function updateTitleOptions(provider) {
         const titleLocationRadio = document.getElementById('title-location');
         const titleLocationLabel = document.querySelector('label[for="title-location"]');
@@ -189,7 +223,11 @@
         let markerMoved = false;
         let hadValidCoords = false;
 
+        // Register global validation hook so handleAction can call it
+        window.pluginValidate = validateCoordInputs;
+
         $openMap.addEventListener('click', () => {
+            if (!validateCoordInputs()) return;
             // Re-read the current latitude/longitude inputs in case the user
             // edited them manually after the page loaded.
             const latInput = document.getElementById('latitude').value;
