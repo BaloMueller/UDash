@@ -1,6 +1,8 @@
+import fnmatch
 import logging
 import os
 import platform
+import re
 import socket
 
 from flask import Blueprint, current_app, jsonify, render_template
@@ -270,24 +272,17 @@ def _get_hostname():
 
 
 def _get_display_info(display_manager):
-    """Return display information reusing InkyPi's configured display type.
+    """Return display information using the same detection path as SystemStatus.
 
-    Uses the same ``display_type`` config key that ``DisplayManager.__init__``
-    reads to select the concrete display driver, and ``get_resolution()`` for
-    the configured panel size.
+    Mirrors the ``_get_display_value`` / ``_parse_epd_code`` logic already used
+    by the SystemStatus plugin so that the System Info page shows the identical
+    resolved display name.  No manual per-model catalog is maintained — the EPD
+    code is parsed dynamically from the ``display_type`` config value.
     """
     device_config = display_manager.device_config
     display_type = device_config.get_config("display_type", default="unknown")
 
-    # Friendly name – mirrors DisplayManager dispatch logic
-    if display_type == "mock":
-        name = "Mock (Development)"
-    elif display_type == "inky":
-        name = "Inky (Pimoroni)"
-    elif display_type.startswith("epd"):
-        name = display_type  # Waveshare model id, e.g. "epd7in3e"
-    else:
-        name = display_type
+    name = _resolve_display_name(display_type)
 
     # Resolution from the same config source used by display rendering
     resolution = None
@@ -298,6 +293,73 @@ def _get_display_info(display_manager):
         pass
 
     return {"name": name, "type": display_type, "resolution": resolution}
+
+
+# ── Display name resolution (mirrors SystemStatus._get_display_value) ──
+
+_DISPLAY_NAME_MAP = {
+    "inky": "Inky e-Paper",
+    "mock": "Mock Display",
+}
+
+_EPD_PATTERN = re.compile(
+    r"^epd(\d+)in(\d+)([a-z]*)(?:_(v\d+|hd))?(?:([a-z]*)(?:_(v\d+|hd))?)?$",
+    re.IGNORECASE,
+)
+
+
+def _parse_epd_code(code):
+    """Parse a Waveshare EPD code into a friendly name.
+
+    Examples::
+
+        epd7in3e    → Waveshare 7.3inch e-Paper
+        epd5in83_v2 → Waveshare 5.83inch e-Paper V2
+        epd7in5b_hd → Waveshare 7.5inch e-Paper HD
+        epd13in3k   → Waveshare 13.3inch e-Paper
+    """
+    m = _EPD_PATTERN.match(code)
+    if not m:
+        return None
+    inches = m.group(1)
+    decimal = m.group(2)
+    size = f"{inches}.{decimal}"
+
+    suffixes = []
+    for g in (m.group(4), m.group(5), m.group(6)):
+        if g:
+            suffixes.append(g.upper())
+
+    suffix_str = f" {' '.join(suffixes)}" if suffixes else ""
+    return f"Waveshare {size}inch e-Paper{suffix_str}"
+
+
+def _resolve_display_name(display_type):
+    """Return a human-readable display name from the config display_type value.
+
+    Uses the same strategy as SystemStatus._get_display_value:
+    1. Check the static name map (inky, mock)
+    2. Parse Waveshare EPD codes dynamically
+    3. Fall back to the raw display_type string
+    """
+    if not display_type:
+        return "Unknown"
+
+    normalized = str(display_type).strip().lower()
+    if not normalized:
+        return "Unknown"
+
+    friendly = _DISPLAY_NAME_MAP.get(normalized)
+    if friendly:
+        return friendly
+
+    if fnmatch.fnmatch(normalized, "epd*in*"):
+        parsed = _parse_epd_code(normalized)
+        if parsed:
+            return f"{parsed} ({display_type})"
+        return f"Waveshare e-Paper ({display_type})"
+
+    return display_type
 
 
 def _get_kernel_info():
@@ -389,7 +451,7 @@ def _collect_system_info(display_manager):
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
         {"label": "CPU frequency", "value": cpu["freq"] or "N/A"},
         {"label": "RAM", "value": ram_spec},
-        {"label": "Display type", "value": display["type"]},
+        {"label": "Display", "value": display["name"]},
         {"label": "Display resolution", "value": display["resolution"] or "N/A"},
     ]
 

@@ -24,6 +24,8 @@ from blueprints.system_info import (
     _is_wsl,
     _get_host_physical_memory,
     _ram_secondary,
+    _parse_epd_code,
+    _resolve_display_name,
     _collect_system_info,
 )
 
@@ -233,13 +235,59 @@ class TestGetHostname:
         assert _get_hostname() == "inkypi"
 
 
+class TestParseEpdCode:
+    def test_simple_model(self):
+        assert _parse_epd_code("epd7in3e") == "Waveshare 7.3inch e-Paper"
+
+    def test_decimal_model(self):
+        assert _parse_epd_code("epd5in83") == "Waveshare 5.83inch e-Paper"
+
+    def test_version_suffix(self):
+        assert _parse_epd_code("epd5in83_v2") == "Waveshare 5.83inch e-Paper V2"
+
+    def test_hd_suffix(self):
+        assert _parse_epd_code("epd7in5b_hd") == "Waveshare 7.5inch e-Paper HD"
+
+    def test_large_model(self):
+        assert _parse_epd_code("epd13in3k") == "Waveshare 13.3inch e-Paper"
+
+    def test_invalid_code(self):
+        assert _parse_epd_code("not_an_epd") is None
+
+
+class TestResolveDisplayName:
+    def test_mock(self):
+        assert _resolve_display_name("mock") == "Mock Display"
+
+    def test_inky(self):
+        assert _resolve_display_name("inky") == "Inky e-Paper"
+
+    def test_waveshare_parsed(self):
+        result = _resolve_display_name("epd7in3e")
+        assert "Waveshare 7.3inch e-Paper" in result
+        assert "epd7in3e" in result
+
+    def test_waveshare_unparseable(self):
+        result = _resolve_display_name("epd_custom_in_format")
+        assert "Waveshare e-Paper" in result
+
+    def test_unknown_type(self):
+        assert _resolve_display_name("something_else") == "something_else"
+
+    def test_empty(self):
+        assert _resolve_display_name("") == "Unknown"
+
+    def test_none(self):
+        assert _resolve_display_name(None) == "Unknown"
+
+
 class TestGetDisplayInfo:
     def test_mock_display(self):
         mock_dm = MagicMock()
         mock_dm.device_config.get_config.return_value = "mock"
         mock_dm.device_config.get_resolution.return_value = (800, 480)
         result = _get_display_info(mock_dm)
-        assert result["name"] == "Mock (Development)"
+        assert result["name"] == "Mock Display"
         assert result["type"] == "mock"
         assert result["resolution"] == "800 × 480"
 
@@ -248,7 +296,7 @@ class TestGetDisplayInfo:
         mock_dm.device_config.get_config.return_value = "inky"
         mock_dm.device_config.get_resolution.return_value = (400, 300)
         result = _get_display_info(mock_dm)
-        assert result["name"] == "Inky (Pimoroni)"
+        assert result["name"] == "Inky e-Paper"
         assert result["type"] == "inky"
         assert result["resolution"] == "400 × 300"
 
@@ -257,7 +305,7 @@ class TestGetDisplayInfo:
         mock_dm.device_config.get_config.return_value = "epd7in3e"
         mock_dm.device_config.get_resolution.return_value = (800, 480)
         result = _get_display_info(mock_dm)
-        assert result["name"] == "epd7in3e"
+        assert "Waveshare 7.3inch e-Paper" in result["name"]
         assert result["type"] == "epd7in3e"
         assert result["resolution"] == "800 × 480"
 
@@ -337,7 +385,7 @@ class TestCollectSystemInfo:
         assert "CPU cores" in dev_labels
         assert "CPU frequency" in dev_labels
         assert "RAM" in dev_labels
-        assert "Display type" in dev_labels
+        assert "Display" in dev_labels
         assert "Display resolution" in dev_labels
         assert len(device_specs) == 10
 
