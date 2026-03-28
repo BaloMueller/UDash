@@ -11,27 +11,39 @@ system_info_bp = Blueprint("system_info", __name__)
 
 
 def _get_cpu_info():
-    """Return CPU model name and frequency."""
+    """Return CPU model name, frequency, and core count."""
     model = platform.processor() or "Unknown"
     freq_ghz = None
+    cores = None
 
     try:
         with open("/proc/cpuinfo") as f:
+            core_count = 0
             for line in f:
                 if line.startswith("model name"):
                     model = line.split(":")[1].strip()
-                    break
+                if line.startswith("processor"):
+                    core_count += 1
+            if core_count > 0:
+                cores = core_count
     except (FileNotFoundError, PermissionError):
         pass
 
-    try:
-        with open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq") as f:
-            freq_khz = int(f.read().strip())
-            freq_ghz = round(freq_khz / 1_000_000, 2)
-    except (FileNotFoundError, PermissionError, ValueError):
-        pass
+    # Prefer current frequency, then max frequency
+    freq_paths = [
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
+        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
+    ]
+    for path in freq_paths:
+        try:
+            with open(path) as f:
+                freq_khz = int(f.read().strip())
+                freq_ghz = round(freq_khz / 1_000_000, 2)
+                break
+        except (FileNotFoundError, PermissionError, ValueError):
+            continue
 
-    return {"model": model, "freq_ghz": freq_ghz}
+    return {"model": model, "freq_ghz": freq_ghz, "cores": cores}
 
 
 def _get_memory_info():
@@ -72,21 +84,37 @@ def _get_storage_info():
 
 
 def _get_os_info():
-    """Return OS name and version."""
+    """Return OS name, version, distribution ID, and pretty name."""
     name = "Unknown"
     version = None
+    distro_id = None
+    pretty_name = None
 
     try:
         with open("/etc/os-release") as f:
             for line in f:
                 if line.startswith("PRETTY_NAME="):
-                    name = line.split("=", 1)[1].strip().strip('"')
+                    pretty_name = line.split("=", 1)[1].strip().strip('"')
                 elif line.startswith("VERSION="):
                     version = line.split("=", 1)[1].strip().strip('"')
+                elif line.startswith("NAME=") and not line.startswith("NAME=\"\n"):
+                    name = line.split("=", 1)[1].strip().strip('"')
+                elif line.startswith("ID="):
+                    distro_id = line.split("=", 1)[1].strip().strip('"')
     except (FileNotFoundError, PermissionError):
         name = f"{platform.system()} {platform.release()}"
 
-    return {"name": name, "version": version}
+    return {
+        "name": name,
+        "version": version,
+        "distro": distro_id,
+        "pretty_name": pretty_name or name,
+    }
+
+
+def _get_architecture():
+    """Return the system architecture (e.g. x86_64, aarch64)."""
+    return platform.machine() or "Unknown"
 
 
 def _get_device_model():
@@ -162,6 +190,16 @@ def _get_display_info(display_manager):
     return {"name": display_class, "model": model}
 
 
+def _get_kernel_info():
+    """Return kernel version string."""
+    return platform.release()
+
+
+def _get_device_name(device_config):
+    """Return the configured device name from InkyPi config."""
+    return device_config.get_config("name", default="InkyPi")
+
+
 def _format_bytes(num_bytes):
     """Format bytes into a human-readable string (e.g. 3.7 GB)."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -172,14 +210,28 @@ def _format_bytes(num_bytes):
 
 
 def _collect_system_info(display_manager):
-    """Collect all system information cards."""
+    """Collect all system information split into highlight cards and specification sections."""
     cpu = _get_cpu_info()
     mem = _get_memory_info()
     storage = _get_storage_info()
     os_info = _get_os_info()
     display = _get_display_info(display_manager)
+    local_ip = _get_local_ip()
+    device_config = display_manager.device_config
 
     cards = [
+        {
+            "icon": "storage",
+            "label": "Storage",
+            "value": storage["total"],
+            "secondary": f"{storage['used']} of {storage['total']} used",
+        },
+        {
+            "icon": "memory",
+            "label": "Installed RAM",
+            "value": mem["total"],
+            "secondary": f"{mem['used']} of {mem['total']} used",
+        },
         {
             "icon": "cpu",
             "label": "CPU",
@@ -187,27 +239,10 @@ def _collect_system_info(display_manager):
             "secondary": f"{cpu['freq_ghz']} GHz" if cpu["freq_ghz"] else None,
         },
         {
-            "icon": "memory",
-            "label": "RAM",
-            "value": mem["total"],
-            "secondary": f"{mem['used']} / {mem['total']} used",
-        },
-        {
-            "icon": "storage",
-            "label": "Storage",
-            "value": storage["total"],
-            "secondary": f"{storage['used']} / {storage['total']} used",
-        },
-        {
             "icon": "os",
             "label": "OS",
-            "value": os_info["name"],
+            "value": os_info["pretty_name"],
             "secondary": os_info["version"],
-        },
-        {
-            "icon": "device",
-            "label": "Device",
-            "value": _get_device_model(),
         },
         {
             "icon": "display",
@@ -216,35 +251,56 @@ def _collect_system_info(display_manager):
             "secondary": display["model"],
         },
         {
-            "icon": "uptime",
-            "label": "Uptime",
-            "value": _get_uptime(),
-        },
-        {
-            "icon": "boot",
-            "label": "Last Boot",
-            "value": _get_last_boot(),
-        },
-        {
             "icon": "network",
             "label": "Local IP",
-            "value": _get_local_ip(),
+            "value": local_ip,
         },
     ]
-    return cards
+
+    device_specs = [
+        {"label": "Device name", "value": _get_device_name(device_config)},
+        {"label": "Hostname", "value": _get_hostname()},
+        {"label": "Model", "value": _get_device_model()},
+        {"label": "Architecture", "value": _get_architecture()},
+        {"label": "CPU", "value": cpu["model"]},
+        {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
+        {"label": "CPU frequency", "value": f"{cpu['freq_ghz']} GHz" if cpu["freq_ghz"] else "N/A"},
+        {"label": "RAM", "value": mem["total"]},
+    ]
+
+    system_specs = [
+        {"label": "OS name", "value": os_info["name"]},
+        {"label": "OS version", "value": os_info["version"] or "N/A"},
+        {"label": "Distribution", "value": os_info["distro"] or "N/A"},
+        {"label": "Kernel", "value": _get_kernel_info()},
+        {"label": "Pretty name", "value": os_info["pretty_name"]},
+    ]
+
+    return cards, device_specs, system_specs
 
 
 @system_info_bp.route("/system-info")
 def system_info_page():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
-    cards = _collect_system_info(display_manager)
-    return render_template("system_info.html", hostname=hostname, cards=cards)
+    cards, device_specs, system_specs = _collect_system_info(display_manager)
+    return render_template(
+        "system_info.html",
+        hostname=hostname,
+        cards=cards,
+        device_specs=device_specs,
+        system_specs=system_specs,
+    )
 
 
 @system_info_bp.route("/api/system-info")
 def system_info_api():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
-    cards = _collect_system_info(display_manager)
-    return jsonify({"hostname": hostname, "cards": cards})
+    cards, device_specs, system_specs = _collect_system_info(display_manager)
+    return jsonify({
+        "hostname": hostname,
+        "cards": cards,
+        "device_specs": device_specs,
+        "system_specs": system_specs,
+    })
