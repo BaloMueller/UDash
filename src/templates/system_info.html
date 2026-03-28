@@ -37,6 +37,18 @@
 
         <div class="separator"></div>
 
+        <!-- System Overview -->
+        {% if overview %}
+        <div class="sysinfo-overview">
+            {% for item in overview %}
+            <span class="sysinfo-overview-item">
+                <span class="sysinfo-overview-label">{{ item.label }}:</span>
+                <span class="sysinfo-overview-value">{{ item.value }}</span>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <!-- Highlight Cards -->
         <div class="sysinfo-grid">
             {% for card in cards %}

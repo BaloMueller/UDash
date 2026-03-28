@@ -28,6 +28,8 @@ from blueprints.system_info import (
     _parse_epd_code,
     _resolve_display_name,
     _collect_system_info,
+    _format_time_ago,
+    _collect_overview,
 )
 
 
@@ -462,3 +464,103 @@ class TestCollectSystemInfo:
         temp_card = next(c for c in cards if c["label"] == "Temperature")
         assert temp_card["value"] == "55 °C"
         assert len(cards) == 6
+
+
+class TestFormatTimeAgo:
+    def test_just_now(self):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        assert _format_time_ago(now) == "just now"
+
+    def test_minutes_ago(self):
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(minutes=5)
+        assert _format_time_ago(dt) == "5 min ago"
+
+    def test_hours_ago(self):
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(hours=3)
+        assert _format_time_ago(dt) == "3h ago"
+
+    def test_days_ago(self):
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc) - timedelta(days=2)
+        assert _format_time_ago(dt) == "2d ago"
+
+    def test_naive_datetime(self):
+        from datetime import datetime, timezone, timedelta
+        dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)
+        assert _format_time_ago(dt) == "10 min ago"
+
+
+class TestCollectOverview:
+    def test_returns_all_items(self):
+        from flask import Flask
+        app = Flask(__name__)
+
+        mock_refresh_info = MagicMock()
+        mock_refresh_info.plugin_id = "clock"
+        mock_refresh_info.refresh_time = "2026-03-27T10:00:00+00:00"
+        mock_refresh_info.get_refresh_datetime.return_value = MagicMock(
+            tzinfo=True
+        )
+
+        mock_config = MagicMock()
+        mock_config.get_refresh_info.return_value = mock_refresh_info
+        mock_config.get_plugin.return_value = {"display_name": "Clock", "id": "clock"}
+        mock_config.get_plugins.return_value = [{"id": "clock"}, {"id": "weather"}]
+
+        mock_task = MagicMock()
+        mock_task.running = True
+
+        app.config["DEVICE_CONFIG"] = mock_config
+        app.config["REFRESH_TASK"] = mock_task
+
+        with app.app_context():
+            items = _collect_overview()
+
+        labels = [i["label"] for i in items]
+        assert "Active plugin" in labels
+        assert "Last refresh" in labels
+        assert "Plugins" in labels
+        assert "Status" in labels
+
+        status = next(i for i in items if i["label"] == "Status")
+        assert status["value"] == "Running"
+
+        plugin = next(i for i in items if i["label"] == "Active plugin")
+        assert plugin["value"] == "Clock"
+
+        plugins_count = next(i for i in items if i["label"] == "Plugins")
+        assert plugins_count["value"] == "2"
+
+    def test_empty_when_no_config(self):
+        from flask import Flask
+        app = Flask(__name__)
+
+        with app.app_context():
+            items = _collect_overview()
+
+        assert items == []
+
+    def test_skips_missing_fields(self):
+        from flask import Flask
+        app = Flask(__name__)
+
+        mock_refresh_info = MagicMock()
+        mock_refresh_info.plugin_id = None
+        mock_refresh_info.refresh_time = None
+
+        mock_config = MagicMock()
+        mock_config.get_refresh_info.return_value = mock_refresh_info
+        mock_config.get_plugins.return_value = []
+
+        app.config["DEVICE_CONFIG"] = mock_config
+
+        with app.app_context():
+            items = _collect_overview()
+
+        labels = [i["label"] for i in items]
+        assert "Active plugin" not in labels
+        assert "Last refresh" not in labels
+        assert "Plugins" not in labels

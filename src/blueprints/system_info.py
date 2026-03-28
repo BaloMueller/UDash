@@ -4,6 +4,7 @@ import os
 import platform
 import re
 import socket
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, render_template
 
@@ -510,14 +511,75 @@ def _collect_system_info(display_manager):
     return cards, device_specs, system_specs
 
 
+def _format_time_ago(dt):
+    """Return a human-readable 'X ago' string from a datetime."""
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = now - dt
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 60:
+        return "just now"
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"{minutes} min ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
+
+
+def _collect_overview():
+    """Collect live system overview data (active plugin, status, etc.).
+
+    Returns a list of dicts with 'label' and 'value' keys.
+    Only items with a value are included.
+    """
+    items = []
+
+    device_config = current_app.config.get("DEVICE_CONFIG")
+    refresh_task = current_app.config.get("REFRESH_TASK")
+
+    # Active plugin
+    if device_config:
+        refresh_info = device_config.get_refresh_info()
+        if refresh_info and refresh_info.plugin_id:
+            plugin_name = refresh_info.plugin_id
+            plugin_cfg = device_config.get_plugin(refresh_info.plugin_id)
+            if plugin_cfg:
+                plugin_name = plugin_cfg.get("display_name", plugin_name)
+            items.append({"label": "Active plugin", "value": plugin_name})
+
+        # Last refresh
+        if refresh_info and refresh_info.refresh_time:
+            refresh_dt = refresh_info.get_refresh_datetime()
+            if refresh_dt:
+                items.append({"label": "Last refresh", "value": _format_time_ago(refresh_dt)})
+
+        # Total plugins
+        plugins = device_config.get_plugins()
+        if plugins:
+            items.append({"label": "Plugins", "value": str(len(plugins))})
+
+    # System status
+    if refresh_task is not None:
+        status = "Running" if refresh_task.running else "Stopped"
+        items.append({"label": "Status", "value": status})
+
+    return items
+
+
 @system_info_bp.route("/system-info")
 def system_info_page():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
+    overview = _collect_overview()
     return render_template(
         "system_info.html",
         hostname=hostname,
+        overview=overview,
         cards=cards,
         device_specs=device_specs,
         system_specs=system_specs,
@@ -529,8 +591,10 @@ def system_info_api():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
+    overview = _collect_overview()
     return jsonify({
         "hostname": hostname,
+        "overview": overview,
         "cards": cards,
         "device_specs": device_specs,
         "system_specs": system_specs,
