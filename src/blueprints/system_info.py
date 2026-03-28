@@ -496,8 +496,6 @@ def _collect_system_info(display_manager):
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
         {"label": "CPU frequency", "value": cpu["freq"] or "N/A"},
         {"label": "RAM", "value": ram_spec},
-        {"label": "Display", "value": display["name"]},
-        {"label": "Display resolution", "value": display["resolution"] or "N/A"},
         {"label": "Storage", "value": storage["total"]},
         {"label": "Storage used", "value": f"{storage['used']} of {storage['total']} used"},
     ]
@@ -507,7 +505,6 @@ def _collect_system_info(display_manager):
         {"label": "OS version", "value": os_info["version"] or "N/A"},
         {"label": "Distribution", "value": os_info["distro"] or "N/A"},
         {"label": "Kernel", "value": _get_kernel_info()},
-        {"label": "Pretty name", "value": os_info["pretty_name"]},
     ]
 
     return cards, device_specs, system_specs

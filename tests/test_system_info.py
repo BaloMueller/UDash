@@ -428,11 +428,9 @@ class TestCollectSystemInfo:
         assert "CPU cores" in dev_labels
         assert "CPU frequency" in dev_labels
         assert "RAM" in dev_labels
-        assert "Display" in dev_labels
-        assert "Display resolution" in dev_labels
         assert "Storage" in dev_labels
         assert "Storage used" in dev_labels
-        assert len(device_specs) == 12
+        assert len(device_specs) == 10
 
         # Verify system specs
         sys_labels = [s["label"] for s in system_specs]
@@ -440,8 +438,7 @@ class TestCollectSystemInfo:
         assert "OS version" in sys_labels
         assert "Distribution" in sys_labels
         assert "Kernel" in sys_labels
-        assert "Pretty name" in sys_labels
-        assert len(system_specs) == 5
+        assert len(system_specs) == 4
 
     @patch("blueprints.system_info._get_temperature", return_value="55 °C")
     @patch("blueprints.system_info._get_local_ip", return_value="192.168.1.1")
