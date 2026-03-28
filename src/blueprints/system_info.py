@@ -220,6 +220,51 @@ def _get_device_model():
         return platform.machine() or "Unknown"
 
 
+def _get_temperature():
+    """Return CPU temperature as a formatted string.
+
+    Priority: psutil sensors → vcgencmd → thermal_zone0 sysfs → None.
+    """
+    # 1. psutil (cross-platform)
+    if psutil is not None:
+        try:
+            temps = psutil.sensors_temperatures()
+            for name in ("cpu_thermal", "cpu-thermal", "coretemp", "k10temp"):
+                if name in temps and temps[name]:
+                    current = temps[name][0].current
+                    if current and current > 0:
+                        return f"{current:.0f} °C"
+            # Fallback: first available sensor
+            for entries in temps.values():
+                if entries and entries[0].current > 0:
+                    return f"{entries[0].current:.0f} °C"
+        except Exception:
+            pass
+
+    # 2. vcgencmd (Raspberry Pi)
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "measure_temp"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0 and "temp=" in result.stdout:
+            temp_str = result.stdout.split("=")[1].split("'")[0]
+            return f"{float(temp_str):.0f} °C"
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
+        pass
+
+    # 3. sysfs thermal zone
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            millideg = int(f.read().strip())
+            if millideg > 0:
+                return f"{millideg / 1000:.0f} °C"
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+
+    return None
+
 def _get_uptime():
     """Return system uptime as a human-readable string."""
     try:
@@ -398,14 +443,16 @@ def _collect_system_info(display_manager):
     os_info = _get_os_info()
     display = _get_display_info(display_manager)
     local_ip = _get_local_ip()
+    uptime = _get_uptime()
+    temperature = _get_temperature()
     device_config = display_manager.device_config
 
     cards = [
         {
-            "icon": "storage",
-            "label": "Storage",
-            "value": storage["total"],
-            "secondary": f"{storage['used']} of {storage['total']} used",
+            "icon": "display",
+            "label": "Display",
+            "value": display["name"],
+            "secondary": display["resolution"],
         },
         {
             "icon": "memory",
@@ -420,16 +467,14 @@ def _collect_system_info(display_manager):
             "secondary": cpu["freq"],
         },
         {
-            "icon": "os",
-            "label": "OS",
-            "value": os_info["pretty_name"],
-            "secondary": os_info["version"],
+            "icon": "temperature",
+            "label": "Temperature",
+            "value": temperature or "N/A",
         },
         {
-            "icon": "display",
-            "label": "Display",
-            "value": display["name"],
-            "secondary": display["resolution"],
+            "icon": "uptime",
+            "label": "Uptime",
+            "value": uptime,
         },
         {
             "icon": "network",
@@ -453,6 +498,8 @@ def _collect_system_info(display_manager):
         {"label": "RAM", "value": ram_spec},
         {"label": "Display", "value": display["name"]},
         {"label": "Display resolution", "value": display["resolution"] or "N/A"},
+        {"label": "Storage", "value": storage["total"]},
+        {"label": "Storage used", "value": f"{storage['used']} of {storage['total']} used"},
     ]
 
     system_specs = [

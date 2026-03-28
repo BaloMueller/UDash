@@ -21,6 +21,7 @@ from blueprints.system_info import (
     _get_kernel_info,
     _get_device_name,
     _get_architecture,
+    _get_temperature,
     _is_wsl,
     _get_host_physical_memory,
     _ram_secondary,
@@ -194,6 +195,41 @@ class TestGetDeviceModel:
         assert result == "x86_64"
 
 
+class TestGetTemperature:
+    @patch("blueprints.system_info.psutil")
+    def test_psutil_cpu_thermal(self, mock_psutil):
+        mock_psutil.sensors_temperatures.return_value = {
+            "cpu_thermal": [MagicMock(current=55.0)],
+        }
+        assert _get_temperature() == "55 °C"
+
+    @patch("blueprints.system_info.psutil")
+    def test_psutil_coretemp(self, mock_psutil):
+        mock_psutil.sensors_temperatures.return_value = {
+            "coretemp": [MagicMock(current=62.0)],
+        }
+        assert _get_temperature() == "62 °C"
+
+    @patch("blueprints.system_info.psutil", new=None)
+    @patch("subprocess.run", side_effect=FileNotFoundError)
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_returns_none_when_unavailable(self, mock_open, mock_run):
+        assert _get_temperature() is None
+
+    @patch("blueprints.system_info.psutil")
+    def test_psutil_empty_falls_to_sysfs(self, mock_psutil):
+        mock_psutil.sensors_temperatures.return_value = {}
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            with patch("builtins.open") as mock_open:
+                mock_open.return_value = MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock(
+                        read=MagicMock(return_value="45000")
+                    )),
+                    __exit__=MagicMock(return_value=False),
+                )
+                assert _get_temperature() == "45 °C"
+
+
 class TestGetUptime:
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_fallback_on_missing(self, mock_open):
@@ -346,6 +382,7 @@ class TestGetDeviceName:
 
 
 class TestCollectSystemInfo:
+    @patch("blueprints.system_info._get_temperature", return_value=None)
     @patch("blueprints.system_info._get_local_ip", return_value="192.168.1.1")
     @patch("blueprints.system_info._get_last_boot", return_value="2025-01-01 10:00")
     @patch("blueprints.system_info._get_uptime", return_value="5d 3h 20m")
@@ -365,15 +402,21 @@ class TestCollectSystemInfo:
 
         cards, device_specs, system_specs = _collect_system_info(mock_dm)
 
-        # Verify cards
+        # Verify cards – Display-centric order, temperature always present
         card_labels = [c["label"] for c in cards]
-        assert "Storage" in card_labels
+        assert card_labels[0] == "Display"
         assert "Installed RAM" in card_labels
         assert "CPU" in card_labels
-        assert "OS" in card_labels
-        assert "Display" in card_labels
+        assert "Temperature" in card_labels
+        assert "Uptime" in card_labels
         assert "Local IP" in card_labels
+        assert "Storage" not in card_labels
+        assert "OS" not in card_labels
         assert len(cards) == 6
+
+        # When temperature is None, card shows "N/A"
+        temp_card = next(c for c in cards if c["label"] == "Temperature")
+        assert temp_card["value"] == "N/A"
 
         # Verify device specs
         dev_labels = [s["label"] for s in device_specs]
@@ -387,7 +430,9 @@ class TestCollectSystemInfo:
         assert "RAM" in dev_labels
         assert "Display" in dev_labels
         assert "Display resolution" in dev_labels
-        assert len(device_specs) == 10
+        assert "Storage" in dev_labels
+        assert "Storage used" in dev_labels
+        assert len(device_specs) == 12
 
         # Verify system specs
         sys_labels = [s["label"] for s in system_specs]
@@ -397,3 +442,26 @@ class TestCollectSystemInfo:
         assert "Kernel" in sys_labels
         assert "Pretty name" in sys_labels
         assert len(system_specs) == 5
+
+    @patch("blueprints.system_info._get_temperature", return_value="55 °C")
+    @patch("blueprints.system_info._get_local_ip", return_value="192.168.1.1")
+    @patch("blueprints.system_info._get_last_boot", return_value="2025-01-01 10:00")
+    @patch("blueprints.system_info._get_uptime", return_value="5d 3h 20m")
+    @patch("blueprints.system_info._get_device_model", return_value="Raspberry Pi 4")
+    @patch("blueprints.system_info._get_os_info", return_value={"name": "Debian GNU/Linux", "version": "11", "distro": "debian", "pretty_name": "Debian GNU/Linux 11 (bullseye)"})
+    @patch("blueprints.system_info._get_storage_info", return_value={"total": "32.0 GB", "used": "10.0 GB"})
+    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "note": None})
+    @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cores": 4})
+    @patch("blueprints.system_info._get_kernel_info", return_value="6.1.0-rpi7")
+    @patch("blueprints.system_info._get_hostname", return_value="inkypi")
+    @patch("blueprints.system_info._get_device_name", return_value="My InkyPi")
+    @patch("blueprints.system_info._get_architecture", return_value="aarch64")
+    def test_temperature_card_shows_value_when_available(self, *mocks):
+        mock_dm = MagicMock()
+        mock_dm.device_config.get_config.return_value = "mock"
+        mock_dm.device_config.get_resolution.return_value = (800, 480)
+
+        cards, _, _ = _collect_system_info(mock_dm)
+        temp_card = next(c for c in cards if c["label"] == "Temperature")
+        assert temp_card["value"] == "55 °C"
+        assert len(cards) == 6
