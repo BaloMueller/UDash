@@ -38,14 +38,29 @@
         <div class="separator"></div>
 
         <!-- System Overview -->
-        {% if overview %}
+        {% if overview_line1 or overview_line2 %}
         <div class="sysinfo-overview">
-            {% for item in overview %}
-            <span class="sysinfo-overview-item">
-                <span class="sysinfo-overview-label">{{ item.label }}:</span>
-                <span class="sysinfo-overview-value">{{ item.value }}</span>
-            </span>
-            {% endfor %}
+            {% if overview_line1 %}
+            <div class="sysinfo-overview-line">
+                {% for item in overview_line1 %}
+                <span class="sysinfo-overview-item">
+                    <span class="sysinfo-overview-label">{{ item.label }}:</span>
+                    <span class="sysinfo-overview-value">{{ item.value }}</span>
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if overview_line2 %}
+            <div class="sysinfo-overview-line">
+                {% for item in overview_line2 %}
+                {% if not loop.first %}<span class="sysinfo-overview-sep">•</span>{% endif %}
+                <span class="sysinfo-overview-item">
+                    <span class="sysinfo-overview-label">{{ item.label }}:</span>
+                    <span class="sysinfo-overview-value">{{ item.value }}</span>
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 

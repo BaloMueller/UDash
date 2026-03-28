@@ -510,28 +510,33 @@ class TestCollectOverview:
         mock_config.get_plugin.return_value = {"display_name": "Clock", "id": "clock"}
         mock_config.get_plugins.return_value = [{"id": "clock"}, {"id": "weather"}]
 
-        mock_task = MagicMock()
-        mock_task.running = True
+        mock_playlist = MagicMock()
+        mock_playlist.name = "Default"
+        mock_playlist.start_time = "00:00"
+        mock_playlist.end_time = "24:00"
+        mock_config.get_playlist_manager.return_value.determine_active_playlist.return_value = mock_playlist
 
         app.config["DEVICE_CONFIG"] = mock_config
-        app.config["REFRESH_TASK"] = mock_task
 
         with app.app_context():
-            items = _collect_overview()
+            line1, line2 = _collect_overview()
 
-        labels = [i["label"] for i in items]
-        assert "Active plugin" in labels
-        assert "Last refresh" in labels
-        assert "Plugins" in labels
-        assert "Status" in labels
+        # Line 1: Active playlist
+        l1_labels = [i["label"] for i in line1]
+        assert "Active playlist" in l1_labels
+        playlist = next(i for i in line1 if i["label"] == "Active playlist")
+        assert playlist["value"] == "Default (00:00\u201324:00)"
 
-        status = next(i for i in items if i["label"] == "Status")
-        assert status["value"] == "Running"
+        # Line 2: Active plugin, Last refresh, Installed plugins
+        l2_labels = [i["label"] for i in line2]
+        assert "Active plugin" in l2_labels
+        assert "Last refresh" in l2_labels
+        assert "Installed plugins" in l2_labels
 
-        plugin = next(i for i in items if i["label"] == "Active plugin")
+        plugin = next(i for i in line2 if i["label"] == "Active plugin")
         assert plugin["value"] == "Clock"
 
-        plugins_count = next(i for i in items if i["label"] == "Plugins")
+        plugins_count = next(i for i in line2 if i["label"] == "Installed plugins")
         assert plugins_count["value"] == "2"
 
     def test_empty_when_no_config(self):
@@ -539,9 +544,10 @@ class TestCollectOverview:
         app = Flask(__name__)
 
         with app.app_context():
-            items = _collect_overview()
+            line1, line2 = _collect_overview()
 
-        assert items == []
+        assert line1 == []
+        assert line2 == []
 
     def test_skips_missing_fields(self):
         from flask import Flask
@@ -554,13 +560,25 @@ class TestCollectOverview:
         mock_config = MagicMock()
         mock_config.get_refresh_info.return_value = mock_refresh_info
         mock_config.get_plugins.return_value = []
+        mock_config.get_playlist_manager.return_value.determine_active_playlist.return_value = None
 
         app.config["DEVICE_CONFIG"] = mock_config
 
         with app.app_context():
-            items = _collect_overview()
+            line1, line2 = _collect_overview()
 
-        labels = [i["label"] for i in items]
-        assert "Active plugin" not in labels
-        assert "Last refresh" not in labels
-        assert "Plugins" not in labels
+        # Playlist always present with fallback
+        playlist = next(i for i in line1 if i["label"] == "Active playlist")
+        assert playlist["value"] == "None (no active schedule now)"
+
+        # Active plugin and Last refresh always present with "None"
+        l2_labels = [i["label"] for i in line2]
+        assert "Active plugin" in l2_labels
+        assert "Last refresh" in l2_labels
+        assert "Installed plugins" not in l2_labels
+
+        plugin = next(i for i in line2 if i["label"] == "Active plugin")
+        assert plugin["value"] == "None"
+
+        refresh = next(i for i in line2 if i["label"] == "Last refresh")
+        assert refresh["value"] == "None"

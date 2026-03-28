@@ -531,43 +531,52 @@ def _format_time_ago(dt):
 
 
 def _collect_overview():
-    """Collect live system overview data (active plugin, status, etc.).
+    """Collect live system overview data.
 
-    Returns a list of dicts with 'label' and 'value' keys.
-    Only items with a value are included.
+    Returns a tuple of two lists (line1, line2), each containing
+    dicts with 'label' and 'value' keys.
+    line1: Active playlist (shown alone on first row).
+    line2: Active plugin, Last refresh, Installed plugins.
     """
-    items = []
+    line1 = []
+    line2 = []
 
     device_config = current_app.config.get("DEVICE_CONFIG")
-    refresh_task = current_app.config.get("REFRESH_TASK")
 
-    # Active plugin
     if device_config:
+        # Active playlist (line 1)
+        playlist_value = "None (no active schedule now)"
+        playlist_manager = device_config.get_playlist_manager()
+        if playlist_manager:
+            active = playlist_manager.determine_active_playlist(datetime.now())
+            if active:
+                playlist_value = f"{active.name} ({active.start_time}\u2013{active.end_time})"
+        line1.append({"label": "Active playlist", "value": playlist_value})
+
+        # Active plugin (line 2)
         refresh_info = device_config.get_refresh_info()
+        plugin_name = "None"
         if refresh_info and refresh_info.plugin_id:
             plugin_name = refresh_info.plugin_id
             plugin_cfg = device_config.get_plugin(refresh_info.plugin_id)
             if plugin_cfg:
                 plugin_name = plugin_cfg.get("display_name", plugin_name)
-            items.append({"label": "Active plugin", "value": plugin_name})
+        line2.append({"label": "Active plugin", "value": plugin_name})
 
-        # Last refresh
+        # Last refresh (line 2)
+        last_refresh = "None"
         if refresh_info and refresh_info.refresh_time:
             refresh_dt = refresh_info.get_refresh_datetime()
             if refresh_dt:
-                items.append({"label": "Last refresh", "value": _format_time_ago(refresh_dt)})
+                last_refresh = _format_time_ago(refresh_dt)
+        line2.append({"label": "Last refresh", "value": last_refresh})
 
-        # Total plugins
+        # Installed plugins (line 2)
         plugins = device_config.get_plugins()
         if plugins:
-            items.append({"label": "Plugins", "value": str(len(plugins))})
+            line2.append({"label": "Installed plugins", "value": str(len(plugins))})
 
-    # System status
-    if refresh_task is not None:
-        status = "Running" if refresh_task.running else "Stopped"
-        items.append({"label": "Status", "value": status})
-
-    return items
+    return line1, line2
 
 
 @system_info_bp.route("/system-info")
@@ -575,11 +584,12 @@ def system_info_page():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
-    overview = _collect_overview()
+    overview_line1, overview_line2 = _collect_overview()
     return render_template(
         "system_info.html",
         hostname=hostname,
-        overview=overview,
+        overview_line1=overview_line1,
+        overview_line2=overview_line2,
         cards=cards,
         device_specs=device_specs,
         system_specs=system_specs,
@@ -591,10 +601,11 @@ def system_info_api():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
-    overview = _collect_overview()
+    overview_line1, overview_line2 = _collect_overview()
     return jsonify({
         "hostname": hostname,
-        "overview": overview,
+        "overview_line1": overview_line1,
+        "overview_line2": overview_line2,
         "cards": cards,
         "device_specs": device_specs,
         "system_specs": system_specs,
