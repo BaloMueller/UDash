@@ -117,6 +117,16 @@
 
 <script>
 
+    /** Return true when value is a non-empty string that parses to a finite number. */
+    function hasCoord(value) {
+        return typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value));
+    }
+
+    /** Parse a coordinate string, returning fallback when empty/invalid. */
+    function parseCoord(value, fallback) {
+        return hasCoord(value) ? Number(value) : fallback;
+    }
+
     function updateTitleOptions(provider) {
         const titleLocationRadio = document.getElementById('title-location');
         const titleLocationLabel = document.querySelector('label[for="title-location"]');
@@ -169,29 +179,36 @@
         const $mapModal = document.querySelector('#mapModal');
         const $closeMap = document.querySelector('#closeMap');
 
-        let latitude = Number($latitude.value) || 0;
-        let longitude = Number($longitude.value) || 0;
-        let zoom = $latitude.value && $longitude.value ? 4.5 : 2.5;
+        let latitude = parseCoord($latitude.value, 0);
+        let longitude = parseCoord($longitude.value, 0);
+        let zoom = hasCoord($latitude.value) && hasCoord($longitude.value) ? 4.5 : 2.5;
         let selectedTitle = 'location';
         let weatherProvider = 'OpenMeteo';
 
         let map, marker;
+        let markerMoved = false;
+        let hadValidCoords = false;
 
         $openMap.addEventListener('click', () => {
             // Re-read the current latitude/longitude inputs in case the user
             // edited them manually after the page loaded.
             const latInput = document.getElementById('latitude').value;
             const longInput = document.getElementById('longitude').value;
-            const parsedLat = Number(latInput);
-            const parsedLong = Number(longInput);
 
-            if (Number.isFinite(parsedLat) && Number.isFinite(parsedLong)) {
-                latitude = parsedLat;
-                longitude = parsedLong;
+            hadValidCoords = hasCoord(latInput) && hasCoord(longInput);
+            markerMoved = false;
+
+            if (hadValidCoords) {
+                const parsedLat = Number(latInput);
+                const parsedLong = Number(longInput);
+                if (Number.isFinite(parsedLat) && Number.isFinite(parsedLong)) {
+                    latitude = parsedLat;
+                    longitude = parsedLong;
+                }
             }
 
             // Recompute zoom based on whether coordinates are present
-            zoom = (document.getElementById('latitude').value && document.getElementById('longitude').value) ? 4.5 : 2.5;
+            zoom = hadValidCoords ? 4.5 : 2.5;
 
             openModal('mapModal');
             setTimeout(() => {
@@ -202,6 +219,10 @@
 
                     map.on('click', event => {
                         marker.setLatLng(event.latlng);
+                        markerMoved = true;
+                    });
+                    marker.on('dragend', () => {
+                        markerMoved = true;
                     });
                 } else {
                     map.invalidateSize();
@@ -212,9 +233,13 @@
         });
 
         $closeMap.addEventListener('click', () => {
-            const position = marker.getLatLng().wrap();
-            $latitude.value = position.lat;
-            $longitude.value = position.lng;
+            // Only persist coordinates if the user moved the marker
+            // or the inputs already had valid values before opening.
+            if (markerMoved || hadValidCoords) {
+                const position = marker.getLatLng().wrap();
+                $latitude.value = position.lat;
+                $longitude.value = position.lng;
+            }
             closeModal('mapModal');
         });
 
@@ -274,9 +299,9 @@
             document.getElementById('weatherTimeZone').value = "locationTimeZone";
         }
 
-        latitude = Number(document.getElementById('latitude').value) || 0;
-        longitude = Number(document.getElementById('longitude').value) || 0;
-        zoom = document.getElementById('latitude').value && document.getElementById('longitude').value ? 4.5 : 2.5;
+        latitude = parseCoord(document.getElementById('latitude').value, 0);
+        longitude = parseCoord(document.getElementById('longitude').value, 0);
+        zoom = hasCoord(document.getElementById('latitude').value) && hasCoord(document.getElementById('longitude').value) ? 4.5 : 2.5;
 
         document.getElementById('weatherProvider').value = weatherProvider;
         document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`).checked = true;
