@@ -244,8 +244,8 @@
         });
 
         if (loadPluginSettings) {
-            document.getElementById('latitude').value = pluginSettings.latitude || '';
-            document.getElementById('longitude').value = pluginSettings.longitude || '';
+            document.getElementById('latitude').value = pluginSettings.latitude ?? '';
+            document.getElementById('longitude').value = pluginSettings.longitude ?? '';
 
             document.getElementById('units').value = pluginSettings.units;
 
