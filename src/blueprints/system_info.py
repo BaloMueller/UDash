@@ -5,15 +5,64 @@ import socket
 
 from flask import Blueprint, current_app, jsonify, render_template
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 logger = logging.getLogger(__name__)
 
 system_info_bp = Blueprint("system_info", __name__)
 
 
+def _get_cpu_freq():
+    """Return CPU frequency as a formatted string (e.g. '2.5 GHz').
+
+    Priority: psutil current -> psutil max -> /proc/cpuinfo cpu MHz ->
+    sysfs scaling_cur_freq -> sysfs cpuinfo_max_freq -> None.
+    """
+    # 1. psutil (preferred – works on ARM and x86)
+    if psutil is not None:
+        try:
+            freq = psutil.cpu_freq()
+            if freq is not None:
+                mhz = freq.current if freq.current and freq.current > 0 else freq.max
+                if mhz and mhz > 0:
+                    return f"{round(mhz / 1000, 1)} GHz"
+        except Exception:
+            pass
+
+    # 2. /proc/cpuinfo "cpu MHz" line
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.lower().startswith("cpu mhz"):
+                    mhz = float(line.split(":")[1].strip())
+                    if mhz > 0:
+                        return f"{round(mhz / 1000, 1)} GHz"
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+
+    # 3. sysfs frequency files (kHz)
+    freq_paths = [
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
+        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
+    ]
+    for path in freq_paths:
+        try:
+            with open(path) as f:
+                freq_khz = int(f.read().strip())
+                if freq_khz > 0:
+                    return f"{round(freq_khz / 1_000_000, 1)} GHz"
+        except (FileNotFoundError, PermissionError, ValueError):
+            continue
+
+    return None
+
+
 def _get_cpu_info():
-    """Return CPU model name, frequency, and core count."""
+    """Return CPU model name, frequency string, and core count."""
     model = platform.processor() or "Unknown"
-    freq_ghz = None
     cores = None
 
     try:
@@ -29,21 +78,8 @@ def _get_cpu_info():
     except (FileNotFoundError, PermissionError):
         pass
 
-    # Prefer current frequency, then max frequency
-    freq_paths = [
-        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
-        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
-    ]
-    for path in freq_paths:
-        try:
-            with open(path) as f:
-                freq_khz = int(f.read().strip())
-                freq_ghz = round(freq_khz / 1_000_000, 2)
-                break
-        except (FileNotFoundError, PermissionError, ValueError):
-            continue
-
-    return {"model": model, "freq_ghz": freq_ghz, "cores": cores}
+    freq = _get_cpu_freq()
+    return {"model": model, "freq": freq, "cores": cores}
 
 
 def _get_memory_info():
@@ -236,7 +272,7 @@ def _collect_system_info(display_manager):
             "icon": "cpu",
             "label": "CPU",
             "value": cpu["model"],
-            "secondary": f"{cpu['freq_ghz']} GHz" if cpu["freq_ghz"] else None,
+            "secondary": cpu["freq"],
         },
         {
             "icon": "os",
@@ -264,7 +300,7 @@ def _collect_system_info(display_manager):
         {"label": "Architecture", "value": _get_architecture()},
         {"label": "CPU", "value": cpu["model"]},
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
-        {"label": "CPU frequency", "value": f"{cpu['freq_ghz']} GHz" if cpu["freq_ghz"] else "N/A"},
+        {"label": "CPU frequency", "value": cpu["freq"] or "N/A"},
         {"label": "RAM", "value": mem["total"]},
     ]
 
