@@ -82,8 +82,49 @@ def _get_cpu_info():
     return {"model": model, "freq": freq, "cores": cores}
 
 
+def _is_wsl():
+    """Detect if running inside Windows Subsystem for Linux."""
+    try:
+        with open("/proc/version") as f:
+            return "microsoft" in f.read().lower()
+    except (FileNotFoundError, PermissionError):
+        return False
+
+
+def _get_host_physical_memory():
+    """Try to get actual physical RAM from Windows host (WSL2 only).
+
+    Uses PowerShell interop to query the host's total physical memory.
+    Returns the value in bytes or None if unavailable.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.strip())
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
+        pass
+    return None
+
+
 def _get_memory_info():
-    """Return total and used RAM in human-readable format."""
+    """Return total and used RAM in human-readable format.
+
+    On WSL, attempts to report the host's physical RAM via PowerShell.
+    Falls back to /proc/meminfo MemTotal with an annotation when the
+    true installed amount cannot be determined.
+    """
     try:
         with open("/proc/meminfo") as f:
             meminfo = {}
@@ -97,12 +138,27 @@ def _get_memory_info():
         total_kb = meminfo.get("MemTotal", 0)
         available_kb = meminfo.get("MemAvailable", 0)
         used_kb = total_kb - available_kb
-        return {
-            "total": _format_bytes(total_kb * 1024),
-            "used": _format_bytes(used_kb * 1024),
-        }
+
+        allocated = _format_bytes(total_kb * 1024)
+        used = _format_bytes(used_kb * 1024)
+
+        if _is_wsl():
+            host_mem = _get_host_physical_memory()
+            if host_mem:
+                return {
+                    "total": _format_bytes(host_mem),
+                    "used": used,
+                    "note": f"WSL allocated: {allocated}",
+                }
+            return {
+                "total": allocated,
+                "used": used,
+                "note": "WSL allocated",
+            }
+
+        return {"total": allocated, "used": used, "note": None}
     except (FileNotFoundError, PermissionError):
-        return {"total": "N/A", "used": "N/A"}
+        return {"total": "N/A", "used": "N/A", "note": None}
 
 
 def _get_storage_info():
@@ -214,16 +270,34 @@ def _get_hostname():
 
 
 def _get_display_info(display_manager):
-    """Return display name and model from the display manager."""
-    display_type = display_manager.device_config.get_config("display_type", default="unknown")
-    display_obj = getattr(display_manager, "display", None)
-    display_class = type(display_obj).__name__ if display_obj else display_type
+    """Return display information reusing InkyPi's configured display type.
 
-    model = None
-    if display_type not in ("mock", "inky"):
-        model = display_type
+    Uses the same ``display_type`` config key that ``DisplayManager.__init__``
+    reads to select the concrete display driver, and ``get_resolution()`` for
+    the configured panel size.
+    """
+    device_config = display_manager.device_config
+    display_type = device_config.get_config("display_type", default="unknown")
 
-    return {"name": display_class, "model": model}
+    # Friendly name – mirrors DisplayManager dispatch logic
+    if display_type == "mock":
+        name = "Mock (Development)"
+    elif display_type == "inky":
+        name = "Inky (Pimoroni)"
+    elif display_type.startswith("epd"):
+        name = display_type  # Waveshare model id, e.g. "epd7in3e"
+    else:
+        name = display_type
+
+    # Resolution from the same config source used by display rendering
+    resolution = None
+    try:
+        w, h = device_config.get_resolution()
+        resolution = f"{w} × {h}"
+    except (TypeError, ValueError, KeyError):
+        pass
+
+    return {"name": name, "type": display_type, "resolution": resolution}
 
 
 def _get_kernel_info():
@@ -243,6 +317,15 @@ def _format_bytes(num_bytes):
             return f"{num_bytes:.1f} {unit}"
         num_bytes /= 1024.0
     return f"{num_bytes:.1f} PB"
+
+
+def _ram_secondary(mem):
+    """Build secondary text for the RAM card, annotating WSL when applicable."""
+    usage = f"{mem['used']} of {mem['total']} used"
+    note = mem.get("note")
+    if note:
+        return f"{usage} ({note})"
+    return usage
 
 
 def _collect_system_info(display_manager):
@@ -266,7 +349,7 @@ def _collect_system_info(display_manager):
             "icon": "memory",
             "label": "Installed RAM",
             "value": mem["total"],
-            "secondary": f"{mem['used']} of {mem['total']} used",
+            "secondary": _ram_secondary(mem),
         },
         {
             "icon": "cpu",
@@ -284,7 +367,7 @@ def _collect_system_info(display_manager):
             "icon": "display",
             "label": "Display",
             "value": display["name"],
-            "secondary": display["model"],
+            "secondary": display["resolution"],
         },
         {
             "icon": "network",
@@ -292,6 +375,10 @@ def _collect_system_info(display_manager):
             "value": local_ip,
         },
     ]
+
+    ram_spec = mem["total"]
+    if mem.get("note"):
+        ram_spec += f" ({mem['note']})"
 
     device_specs = [
         {"label": "Device name", "value": _get_device_name(device_config)},
@@ -301,7 +388,9 @@ def _collect_system_info(display_manager):
         {"label": "CPU", "value": cpu["model"]},
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
         {"label": "CPU frequency", "value": cpu["freq"] or "N/A"},
-        {"label": "RAM", "value": mem["total"]},
+        {"label": "RAM", "value": ram_spec},
+        {"label": "Display type", "value": display["type"]},
+        {"label": "Display resolution", "value": display["resolution"] or "N/A"},
     ]
 
     system_specs = [
