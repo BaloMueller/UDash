@@ -38,7 +38,7 @@ class YearProgress(BasePlugin):
         days_left = (start_of_next_year - current_time).total_seconds() / (24 * 3600)
         elapsed_days = (current_time - start_of_year).total_seconds() / (24 * 3600)
 
-        language = str(settings.get("language", "en")).strip() or "en"
+        language = str(settings.get("language", "en")).strip().lower() or "en"
         labels = LOCALE_DATA.get(language, LOCALE_DATA["en"])
 
         template_params = {
