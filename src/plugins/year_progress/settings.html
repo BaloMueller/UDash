@@ -15,13 +15,20 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const language = document.getElementById('language');
-        if (typeof pluginSettings === 'object' && pluginSettings !== null) {
-            language.value = pluginSettings.language || 'en';
-            if (!language.querySelector(`option[value="${pluginSettings.language}"]`)) {
-                language.value = 'en';
-            }
-        } else {
-            language.value = 'en';
+        let selectedLanguage = 'en';
+
+        if (typeof pluginSettings === 'object' && pluginSettings !== null && typeof pluginSettings.language === 'string') {
+            selectedLanguage = pluginSettings.language;
         }
+
+        let hasOption = false;
+        for (let i = 0; i < language.options.length; i++) {
+            if (language.options[i].value === selectedLanguage) {
+                hasOption = true;
+                break;
+            }
+        }
+
+        language.value = hasOption ? selectedLanguage : 'en';
     });
 </script>
