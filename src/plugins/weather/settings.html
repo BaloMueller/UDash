@@ -5,11 +5,11 @@
     <label class="form-label">Location: </label>
     <div class="form-group">
         <span>Latitude </span>
-        <input readonly type="text" id="latitude" name="latitude" class="form-input" />
+        <input type="text" id="latitude" name="latitude" class="form-input" />
     </div>
     <div class="form-group">
         <span>Longitude </span>
-        <input readonly type="text" id="longitude" name="longitude" class="form-input" />
+        <input type="text" id="longitude" name="longitude" class="form-input" />
     </div>
     <button type="button" id="openMap" class="action-button compact">Select Location</button>
 </div>
@@ -169,16 +169,31 @@
         const $mapModal = document.querySelector('#mapModal');
         const $closeMap = document.querySelector('#closeMap');
 
-        let latitude = +$latitude.value;
-        let longitude = +$longitude.value;
-        let zoom = latitude && longitude ? 4.5 : 2.5;
+        let latitude = Number($latitude.value) || 0;
+        let longitude = Number($longitude.value) || 0;
+        let zoom = $latitude.value && $longitude.value ? 4.5 : 2.5;
         let selectedTitle = 'location';
         let weatherProvider = 'OpenMeteo';
 
         let map, marker;
 
         $openMap.addEventListener('click', () => {
-            openModal('mapModal')
+            // Re-read the current latitude/longitude inputs in case the user
+            // edited them manually after the page loaded.
+            const latInput = document.getElementById('latitude').value;
+            const longInput = document.getElementById('longitude').value;
+            const parsedLat = Number(latInput);
+            const parsedLong = Number(longInput);
+
+            if (Number.isFinite(parsedLat) && Number.isFinite(parsedLong)) {
+                latitude = parsedLat;
+                longitude = parsedLong;
+            }
+
+            // Recompute zoom based on whether coordinates are present
+            zoom = (document.getElementById('latitude').value && document.getElementById('longitude').value) ? 4.5 : 2.5;
+
+            openModal('mapModal');
             setTimeout(() => {
                 if (!map) {
                     map = L.map('map').setView([latitude, longitude], zoom);
@@ -188,6 +203,10 @@
                     map.on('click', event => {
                         marker.setLatLng(event.latlng);
                     });
+                } else {
+                    map.invalidateSize();
+                    map.setView([latitude, longitude], zoom);
+                    marker.setLatLng([latitude, longitude]);
                 }
             }, 100);
         });
@@ -200,8 +219,8 @@
         });
 
         if (loadPluginSettings) {
-            document.getElementById('latitude').value = pluginSettings.latitude;
-            document.getElementById('longitude').value = pluginSettings.longitude;
+            document.getElementById('latitude').value = pluginSettings.latitude || '';
+            document.getElementById('longitude').value = pluginSettings.longitude || '';
 
             document.getElementById('units').value = pluginSettings.units;
 
@@ -254,6 +273,10 @@
 			document.getElementById('moonPhase').value = "false";
             document.getElementById('weatherTimeZone').value = "locationTimeZone";
         }
+
+        latitude = Number(document.getElementById('latitude').value) || 0;
+        longitude = Number(document.getElementById('longitude').value) || 0;
+        zoom = document.getElementById('latitude').value && document.getElementById('longitude').value ? 4.5 : 2.5;
 
         document.getElementById('weatherProvider').value = weatherProvider;
         document.querySelector(`input[name="titleSelection"][value="${selectedTitle}"]`).checked = true;
