@@ -183,7 +183,7 @@
                 <div class="sysinfo-plugin-chips">
                     {% for p in plugin_info.third_party %}
                     <a href="{{ p.repository }}" target="_blank" rel="noopener noreferrer" class="sysinfo-plugin-chip sysinfo-plugin-chip--thirdparty">
-                        {{ p.name }}
+                        {{ p.name }} <span class="sysinfo-plugin-exticon">↗</span>
                         <span class="sysinfo-plugin-tooltip">
                             <span>id: {{ p.id }}</span>
                             <span>{{ p.repository | replace('https://', '') }}</span>
