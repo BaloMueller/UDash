@@ -68,16 +68,32 @@ def _get_cpu_freq():
 
 
 def _get_cpu_info():
-    """Return CPU model name, frequency string, and core count."""
-    model = platform.processor() or "Unknown"
+    """Return CPU model name, frequency string, and core count.
+
+    Detection order for model name:
+    1. /proc/cpuinfo ``model name`` field (x86, modern ARM)
+    2. /proc/cpuinfo ``Hardware`` field (older Raspberry Pi kernels)
+    3. /proc/device-tree/model (Raspberry Pi device-tree)
+    4. platform.processor()
+    5. ``CPU not detected`` (never shows "Unknown")
+
+    Results are cached after the first call.
+    """
+    if hasattr(_get_cpu_info, "_cache"):
+        return _get_cpu_info._cache
+
+    model = None
+    hardware = None
     cores = None
 
     try:
         with open("/proc/cpuinfo") as f:
             core_count = 0
             for line in f:
-                if line.startswith("model name"):
+                if line.startswith("model name") and not model:
                     model = line.split(":")[1].strip()
+                if line.startswith("Hardware") and not hardware:
+                    hardware = line.split(":")[1].strip()
                 if line.startswith("processor"):
                     core_count += 1
             if core_count > 0:
@@ -85,8 +101,28 @@ def _get_cpu_info():
     except (FileNotFoundError, PermissionError):
         pass
 
+    if not model or model.lower() == "unknown":
+        model = hardware
+
+    if not model or model.lower() == "unknown":
+        try:
+            with open("/proc/device-tree/model") as f:
+                model = f.read().strip().rstrip("\x00")
+        except (FileNotFoundError, PermissionError):
+            pass
+
+    if not model or model.lower() == "unknown":
+        proc = platform.processor()
+        if proc:
+            model = proc
+
+    if not model or model.lower() == "unknown":
+        model = "CPU not detected"
+
     freq = _get_cpu_freq()
-    return {"model": model, "freq": freq, "cores": cores}
+    result = {"model": model, "freq": freq, "cores": cores}
+    _get_cpu_info._cache = result
+    return result
 
 
 def _is_wsl():

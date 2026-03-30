@@ -81,6 +81,10 @@ class TestGetCpuFreq:
 
 
 class TestGetCpuInfo:
+    def setup_method(self):
+        if hasattr(_get_cpu_info, "_cache"):
+            del _get_cpu_info._cache
+
     @patch("blueprints.system_info._get_cpu_freq", return_value=None)
     @patch("builtins.open", side_effect=FileNotFoundError)
     @patch("platform.processor", return_value="x86_64")
