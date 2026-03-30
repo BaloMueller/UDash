@@ -652,12 +652,14 @@ def _collect_plugin_info():
 def system_info_page():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
+    device_name = _get_device_name(display_manager.device_config)
     cards, device_specs, system_specs = _collect_system_info(display_manager)
     overview_line1, overview_line2 = _collect_overview()
     plugin_info = _collect_plugin_info()
     return render_template(
         "system_info.html",
         hostname=hostname,
+        device_name=device_name,
         overview_line1=overview_line1,
         overview_line2=overview_line2,
         cards=cards,
