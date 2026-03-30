@@ -29,9 +29,9 @@
                     <img src="{{ url_for('static', filename='icons/system_info.png') }}" alt="System Info" class="app-icon sysinfo-icon">
                     <div>
                         <h1 class="app-title">System Info</h1>
-                        <span class="sysinfo-hostname">{{ device_name if device_name else hostname }}</span>
+                        <div class="sysinfo-hostname">{{ device_name if device_name else hostname }}</div>
                         {% if device_name and device_name != hostname %}
-                        <span class="sysinfo-hostname">{{ hostname }}</span>
+                        <div class="sysinfo-hostname">{{ hostname }}</div>
                         {% endif %}
                     </div>
                 </div>
