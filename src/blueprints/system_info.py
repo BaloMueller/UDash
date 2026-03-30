@@ -635,6 +635,9 @@ def _collect_plugin_info():
         else:
             builtin.append(plugin_data)
 
+    builtin.sort(key=lambda p: p["name"].casefold())
+    third_party.sort(key=lambda p: p["name"].casefold())
+
     total = len(builtin) + len(third_party)
     return {
         "builtin": builtin,
