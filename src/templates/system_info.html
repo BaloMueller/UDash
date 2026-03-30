@@ -152,6 +152,52 @@
                 {% endfor %}
             </div>
         </div>
+
+        <!-- Installed Plugins -->
+        <div class="sysinfo-specs-section">
+            <h2 class="sysinfo-specs-title">Installed plugins</h2>
+
+            <div class="sysinfo-plugin-summary">
+                <span class="sysinfo-plugin-summary-item">
+                    <span class="sysinfo-overview-label">Total:</span>
+                    <span class="sysinfo-overview-value">{{ plugin_info.total }}</span>
+                </span>
+                <span class="sysinfo-overview-sep">•</span>
+                <span class="sysinfo-plugin-summary-item">
+                    <span class="sysinfo-overview-label">Built-in:</span>
+                    <span class="sysinfo-overview-value">{{ plugin_info.builtin_count }}</span>
+                </span>
+                <span class="sysinfo-overview-sep">•</span>
+                <span class="sysinfo-plugin-summary-item">
+                    <span class="sysinfo-overview-label">Third-party:</span>
+                    <span class="sysinfo-overview-value">{{ plugin_info.third_party_count }}</span>
+                </span>
+            </div>
+
+            {% if plugin_info.third_party %}
+            <div class="sysinfo-plugin-group">
+                <h3 class="sysinfo-plugin-group-title">Third-party</h3>
+                <div class="sysinfo-plugin-chips">
+                    {% for p in plugin_info.third_party %}
+                    <span class="sysinfo-plugin-chip sysinfo-plugin-chip--thirdparty">{{ p.name }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="sysinfo-plugin-group">
+                <h3 class="sysinfo-plugin-group-title">Builtin</h3>
+                {% if plugin_info.builtin %}
+                <div class="sysinfo-plugin-chips">
+                    {% for p in plugin_info.builtin %}
+                    <span class="sysinfo-plugin-chip">{{ p.name }}</span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <span class="sysinfo-plugin-none">None</span>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </body>
 </html>

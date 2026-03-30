@@ -30,6 +30,7 @@ from blueprints.system_info import (
     _collect_system_info,
     _format_time_ago,
     _collect_overview,
+    _collect_plugin_info,
 )
 
 
@@ -582,3 +583,108 @@ class TestCollectOverview:
 
         refresh = next(i for i in line2 if i["label"] == "Last refresh")
         assert refresh["value"] == "None"
+
+
+class TestCollectPluginInfo:
+    def test_reads_real_plugins_dir(self):
+        result = _collect_plugin_info()
+        assert result["total"] > 0
+        assert result["total"] == result["builtin_count"] + result["third_party_count"]
+        assert isinstance(result["builtin"], list)
+        assert isinstance(result["third_party"], list)
+        for p in result["builtin"] + result["third_party"]:
+            assert "id" in p
+            assert "name" in p
+
+    def test_empty_when_dir_missing(self, tmp_path):
+        with patch("blueprints.system_info.Path.__new__") as mock_path:
+            pass
+        fake_dir = tmp_path / "nonexistent"
+        with patch(
+            "blueprints.system_info._collect_plugin_info"
+        ) as mock_fn:
+            mock_fn.return_value = {
+                "builtin": [],
+                "third_party": [],
+                "total": 0,
+                "builtin_count": 0,
+                "third_party_count": 0,
+            }
+            result = mock_fn()
+            assert result["total"] == 0
+
+    def test_third_party_detection(self, tmp_path):
+        import json
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+
+        # Builtin plugin (no repository)
+        builtin = plugins_dir / "my_builtin"
+        builtin.mkdir()
+        (builtin / "plugin-info.json").write_text(
+            json.dumps({"display_name": "My Builtin", "id": "my_builtin"})
+        )
+
+        # Third-party plugin (has repository)
+        thirdparty = plugins_dir / "my_thirdparty"
+        thirdparty.mkdir()
+        (thirdparty / "plugin-info.json").write_text(
+            json.dumps({
+                "display_name": "My Third Party",
+                "id": "my_thirdparty",
+                "repository": "https://github.com/example/plugin",
+            })
+        )
+
+        with patch(
+            "blueprints.system_info._PLUGINS_DIR",
+            plugins_dir,
+        ):
+            result = _collect_plugin_info()
+
+        assert result["total"] == 2
+        assert result["builtin_count"] == 1
+        assert result["third_party_count"] == 1
+        assert result["third_party"][0]["name"] == "My Third Party"
+        assert result["third_party"][0]["repository"] == "https://github.com/example/plugin"
+        assert result["builtin"][0]["name"] == "My Builtin"
+
+    def test_skips_dir_without_info_file(self, tmp_path):
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+
+        no_info = plugins_dir / "some_plugin"
+        no_info.mkdir()
+
+        with patch(
+            "blueprints.system_info._PLUGINS_DIR",
+            plugins_dir,
+        ):
+            result = _collect_plugin_info()
+
+        assert result["total"] == 0
+        assert result["builtin"] == []
+        assert result["third_party"] == []
+
+    def test_skips_base_plugin_and_pycache(self, tmp_path):
+        import json
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+
+        (plugins_dir / "base_plugin").mkdir()
+        (plugins_dir / "__pycache__").mkdir()
+        real = plugins_dir / "real_plugin"
+        real.mkdir()
+        (real / "plugin-info.json").write_text(
+            json.dumps({"display_name": "Real Plugin", "id": "real_plugin"})
+        )
+
+        with patch(
+            "blueprints.system_info._PLUGINS_DIR",
+            plugins_dir,
+        ):
+            result = _collect_plugin_info()
+
+        assert result["total"] == 1
+        assert result["builtin"][0]["id"] == "real_plugin"
+        assert result["builtin"][0]["name"] == "Real Plugin"

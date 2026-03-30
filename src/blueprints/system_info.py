@@ -1,10 +1,12 @@
 import fnmatch
+import json
 import logging
 import os
 import platform
 import re
 import socket
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, render_template
 
@@ -16,6 +18,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 system_info_bp = Blueprint("system_info", __name__)
+
+_PLUGINS_DIR = Path(__file__).resolve().parent.parent / "plugins"
 
 
 def _get_cpu_freq():
@@ -579,12 +583,75 @@ def _collect_overview():
     return line1, line2
 
 
+def _collect_plugin_info():
+    """Collect installed plugin metadata from plugin-info.json files.
+
+    Returns a dict with 'builtin' and 'third_party' lists plus counts.
+    Uses the same logic as the CLI ``inkypi plugin list`` command:
+    a plugin is third-party when its plugin-info.json has a non-empty
+    ``repository`` field, builtin otherwise.
+    """
+    plugins_dir = _PLUGINS_DIR
+
+    builtin = []
+    third_party = []
+
+    if not plugins_dir.is_dir():
+        return {
+            "builtin": builtin,
+            "third_party": third_party,
+            "total": 0,
+            "builtin_count": 0,
+            "third_party_count": 0,
+        }
+
+    for entry in sorted(plugins_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        plugin_id = entry.name
+        if plugin_id in ("base_plugin", "__pycache__"):
+            continue
+
+        info_file = entry / "plugin-info.json"
+        if not info_file.is_file():
+            continue
+
+        display_name = plugin_id.replace("_", " ").title()
+        repository = ""
+
+        try:
+            with open(info_file) as f:
+                info = json.load(f)
+            display_name = info.get("display_name", display_name)
+            repository = info.get("repository", "")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+        plugin_data = {"id": plugin_id, "name": display_name}
+
+        if repository:
+            plugin_data["repository"] = repository
+            third_party.append(plugin_data)
+        else:
+            builtin.append(plugin_data)
+
+    total = len(builtin) + len(third_party)
+    return {
+        "builtin": builtin,
+        "third_party": third_party,
+        "total": total,
+        "builtin_count": len(builtin),
+        "third_party_count": len(third_party),
+    }
+
+
 @system_info_bp.route("/system-info")
 def system_info_page():
     display_manager = current_app.config["DISPLAY_MANAGER"]
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
     overview_line1, overview_line2 = _collect_overview()
+    plugin_info = _collect_plugin_info()
     return render_template(
         "system_info.html",
         hostname=hostname,
@@ -593,6 +660,7 @@ def system_info_page():
         cards=cards,
         device_specs=device_specs,
         system_specs=system_specs,
+        plugin_info=plugin_info,
     )
 
 
@@ -602,6 +670,7 @@ def system_info_api():
     hostname = _get_hostname()
     cards, device_specs, system_specs = _collect_system_info(display_manager)
     overview_line1, overview_line2 = _collect_overview()
+    plugin_info = _collect_plugin_info()
     return jsonify({
         "hostname": hostname,
         "overview_line1": overview_line1,
@@ -609,4 +678,5 @@ def system_info_api():
         "cards": cards,
         "device_specs": device_specs,
         "system_specs": system_specs,
+        "plugin_info": plugin_info,
     })
