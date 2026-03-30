@@ -623,7 +623,7 @@ def _collect_system_info(display_manager):
             "icon": "cpu",
             "label": "CPU",
             "value": cpu["model"],
-            "secondary": cpu["cur_freq"] or cpu["freq"],
+            "secondary": cpu["max_freq"] or cpu["freq"],
         },
         {
             "icon": "temperature",
