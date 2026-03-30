@@ -46,6 +46,9 @@
                 <span class="sysinfo-overview-item">
                     <span class="sysinfo-overview-label">{{ item.label }}:</span>
                     <span class="sysinfo-overview-value">{{ item.value }}</span>
+                    {% if item.label == "Active playlist" %}
+                    <span title="Playlist selected automatically based on the smallest time range" aria-label="Playlist selected automatically based on the smallest time range">ⓘ</span>
+                    {% endif %}
                 </span>
                 {% endfor %}
             </div>
