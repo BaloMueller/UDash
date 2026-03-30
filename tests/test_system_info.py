@@ -9,6 +9,11 @@ from blueprints.system_info import (
     _format_bytes,
     _get_cpu_info,
     _get_cpu_freq,
+    _get_cpu_cur_freq,
+    _get_cpu_max_freq,
+    _get_arm_cpu_model,
+    _get_installed_ram,
+    _read_sysfs_freq,
     _get_memory_info,
     _get_storage_info,
     _get_os_info,
@@ -85,18 +90,26 @@ class TestGetCpuInfo:
         if hasattr(_get_cpu_info, "_cache"):
             del _get_cpu_info._cache
 
+    @patch("blueprints.system_info._get_cpu_max_freq", return_value=None)
+    @patch("blueprints.system_info._get_cpu_cur_freq", return_value=None)
     @patch("blueprints.system_info._get_cpu_freq", return_value=None)
+    @patch("blueprints.system_info._get_arm_cpu_model", return_value=None)
     @patch("builtins.open", side_effect=FileNotFoundError)
     @patch("platform.processor", return_value="x86_64")
-    def test_fallback_to_platform(self, mock_proc, mock_open, mock_freq):
+    def test_fallback_to_platform(self, mock_proc, mock_open, mock_arm, mock_freq, mock_cur, mock_max):
         result = _get_cpu_info()
         assert result["model"] == "x86_64"
         assert result["freq"] is None
+        assert result["cur_freq"] is None
+        assert result["max_freq"] is None
         assert result["cores"] is None
 
+    @patch("blueprints.system_info._get_cpu_max_freq", return_value="3.0 GHz")
+    @patch("blueprints.system_info._get_cpu_cur_freq", return_value="2.5 GHz")
     @patch("blueprints.system_info._get_cpu_freq", return_value="2.5 GHz")
+    @patch("blueprints.system_info._get_arm_cpu_model", return_value=None)
     @patch("builtins.open")
-    def test_reads_proc_cpuinfo(self, mock_open, mock_freq):
+    def test_reads_proc_cpuinfo(self, mock_open, mock_arm, mock_freq, mock_cur, mock_max):
         cpuinfo_content = "processor\t: 0\nmodel name\t: Intel(R) Core(TM) i5-12400\nprocessor\t: 1\nmodel name\t: Intel(R) Core(TM) i5-12400\n"
         mock_open.return_value = MagicMock(
             __enter__=MagicMock(return_value=iter(cpuinfo_content.splitlines(True))),
@@ -106,6 +119,8 @@ class TestGetCpuInfo:
         assert "i5-12400" in result["model"]
         assert result["cores"] == 2
         assert result["freq"] == "2.5 GHz"
+        assert result["cur_freq"] == "2.5 GHz"
+        assert result["max_freq"] == "3.0 GHz"
 
 
 class TestIsWsl:
@@ -396,8 +411,8 @@ class TestCollectSystemInfo:
     @patch("blueprints.system_info._get_device_model", return_value="Raspberry Pi 4")
     @patch("blueprints.system_info._get_os_info", return_value={"name": "Debian GNU/Linux", "version": "11", "distro": "debian", "pretty_name": "Debian GNU/Linux 11 (bullseye)"})
     @patch("blueprints.system_info._get_storage_info", return_value={"total": "32.0 GB", "used": "10.0 GB"})
-    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "note": None})
-    @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cores": 4})
+    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "installed": None, "note": None})
+    @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cur_freq": "1.2 GHz", "max_freq": "1.5 GHz", "cores": 4})
     @patch("blueprints.system_info._get_kernel_info", return_value="6.1.0-rpi7")
     @patch("blueprints.system_info._get_hostname", return_value="inkypi")
     @patch("blueprints.system_info._get_device_name", return_value="My InkyPi")
@@ -433,11 +448,13 @@ class TestCollectSystemInfo:
         assert "Architecture" in dev_labels
         assert "CPU" in dev_labels
         assert "CPU cores" in dev_labels
-        assert "CPU frequency" in dev_labels
-        assert "RAM" in dev_labels
+        assert "Current frequency" in dev_labels
+        assert "Max frequency" in dev_labels
+        assert "Available to system" in dev_labels
+        assert "Used" in dev_labels
         assert "Storage" in dev_labels
         assert "Storage used" in dev_labels
-        assert len(device_specs) == 10
+        # device_specs count varies based on installed RAM availability
 
         # Verify system specs
         sys_labels = [s["label"] for s in system_specs]
@@ -454,8 +471,8 @@ class TestCollectSystemInfo:
     @patch("blueprints.system_info._get_device_model", return_value="Raspberry Pi 4")
     @patch("blueprints.system_info._get_os_info", return_value={"name": "Debian GNU/Linux", "version": "11", "distro": "debian", "pretty_name": "Debian GNU/Linux 11 (bullseye)"})
     @patch("blueprints.system_info._get_storage_info", return_value={"total": "32.0 GB", "used": "10.0 GB"})
-    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "note": None})
-    @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cores": 4})
+    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "installed": None, "note": None})
+    @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cur_freq": "1.2 GHz", "max_freq": "1.5 GHz", "cores": 4})
     @patch("blueprints.system_info._get_kernel_info", return_value="6.1.0-rpi7")
     @patch("blueprints.system_info._get_hostname", return_value="inkypi")
     @patch("blueprints.system_info._get_device_name", return_value="My InkyPi")

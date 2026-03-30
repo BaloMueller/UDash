@@ -28,7 +28,7 @@ def _get_cpu_freq():
     Priority: psutil current -> psutil max -> /proc/cpuinfo cpu MHz ->
     sysfs scaling_cur_freq -> sysfs cpuinfo_max_freq -> None.
     """
-    # 1. psutil (preferred – works on ARM and x86)
+    # 1. psutil (preferred - works on ARM and x86)
     if psutil is not None:
         try:
             freq = psutil.cpu_freq()
@@ -67,15 +67,84 @@ def _get_cpu_freq():
     return None
 
 
+def _read_sysfs_freq(path):
+    """Read a sysfs frequency file (kHz) and return formatted GHz string or None."""
+    try:
+        with open(path) as f:
+            freq_khz = int(f.read().strip())
+            if freq_khz > 0:
+                return f"{round(freq_khz / 1_000_000, 1)} GHz"
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+    return None
+
+
+def _get_cpu_cur_freq():
+    """Return current CPU frequency from sysfs as a formatted string or None."""
+    return _read_sysfs_freq(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+    )
+
+
+def _get_cpu_max_freq():
+    """Return max CPU frequency from sysfs as a formatted string or None."""
+    return _read_sysfs_freq(
+        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
+    )
+
+
+# -- ARM CPU part ID to model name mapping --
+_ARM_CPU_PART_MAP = {
+    "0xb76": "ARM1176JZF-S",
+    "0xc07": "ARM Cortex-A7",
+    "0xc08": "ARM Cortex-A8",
+    "0xc09": "ARM Cortex-A9",
+    "0xc0f": "ARM Cortex-A15",
+    "0xd01": "ARM Cortex-A32",
+    "0xd03": "ARM Cortex-A53",
+    "0xd04": "ARM Cortex-A35",
+    "0xd05": "ARM Cortex-A55",
+    "0xd07": "ARM Cortex-A57",
+    "0xd08": "ARM Cortex-A72",
+    "0xd09": "ARM Cortex-A73",
+    "0xd0a": "ARM Cortex-A75",
+    "0xd0b": "ARM Cortex-A76",
+    "0xd0c": "ARM Neoverse N1",
+    "0xd0d": "ARM Cortex-A77",
+    "0xd41": "ARM Cortex-A78",
+    "0xd44": "ARM Cortex-X1",
+    "0xd46": "ARM Cortex-A510",
+    "0xd47": "ARM Cortex-A710",
+    "0xd48": "ARM Cortex-X2",
+}
+
+
+def _get_arm_cpu_model():
+    """Detect ARM CPU model from /proc/cpuinfo CPU part field.
+
+    Returns a friendly name like 'ARM Cortex-A53' or None.
+    """
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("CPU part"):
+                    part = line.split(":")[1].strip().lower()
+                    return _ARM_CPU_PART_MAP.get(part)
+    except (FileNotFoundError, PermissionError):
+        pass
+    return None
+
+
 def _get_cpu_info():
-    """Return CPU model name, frequency string, and core count.
+    """Return CPU model name, frequency strings, and core count.
 
     Detection order for model name:
-    1. /proc/cpuinfo ``model name`` field (x86, modern ARM)
-    2. /proc/cpuinfo ``Hardware`` field (older Raspberry Pi kernels)
-    3. /proc/device-tree/model (Raspberry Pi device-tree)
-    4. platform.processor()
-    5. ``CPU not detected`` (never shows "Unknown")
+    1. ARM CPU part mapping (Raspberry Pi / ARM SoCs)
+    2. /proc/cpuinfo ``model name`` field (x86, modern ARM)
+    3. /proc/cpuinfo ``Hardware`` field (older Raspberry Pi kernels)
+    4. /proc/device-tree/model (Raspberry Pi device-tree)
+    5. platform.processor()
+    6. ``CPU not detected`` (never shows "Unknown")
 
     Results are cached after the first call.
     """
@@ -85,6 +154,11 @@ def _get_cpu_info():
     model = None
     hardware = None
     cores = None
+
+    # Try ARM CPU part mapping first (most accurate for Raspberry Pi)
+    arm_model = _get_arm_cpu_model()
+    if arm_model:
+        model = arm_model
 
     try:
         with open("/proc/cpuinfo") as f:
@@ -120,7 +194,15 @@ def _get_cpu_info():
         model = "CPU not detected"
 
     freq = _get_cpu_freq()
-    result = {"model": model, "freq": freq, "cores": cores}
+    cur_freq = _get_cpu_cur_freq()
+    max_freq = _get_cpu_max_freq()
+    result = {
+        "model": model,
+        "freq": freq,
+        "cur_freq": cur_freq,
+        "max_freq": max_freq,
+        "cores": cores,
+    }
     _get_cpu_info._cache = result
     return result
 
@@ -161,13 +243,47 @@ def _get_host_physical_memory():
     return None
 
 
+def _get_installed_ram():
+    """Return total installed physical RAM via vcgencmd (Raspberry Pi).
+
+    Sums ``vcgencmd get_mem arm`` and ``vcgencmd get_mem gpu`` to obtain the
+    full physical memory (including GPU-reserved portion invisible to Linux).
+    Returns a formatted string like '512 MB' or None if vcgencmd is unavailable.
+    """
+    import subprocess
+
+    total_mb = 0
+    for region in ("arm", "gpu"):
+        try:
+            result = subprocess.run(
+                ["vcgencmd", "get_mem", region],
+                capture_output=True, text=True, timeout=3,
+            )
+            if result.returncode == 0 and "=" in result.stdout:
+                val = result.stdout.split("=")[1].strip()
+                # e.g. "448M" or "64M"
+                num = int(re.sub(r"[^\d]", "", val))
+                total_mb += num
+        except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
+            return None
+    if total_mb > 0:
+        if total_mb >= 1024:
+            return f"{round(total_mb / 1024, 1)} GB"
+        return f"{total_mb} MB"
+    return None
+
+
 def _get_memory_info():
     """Return total and used RAM in human-readable format.
 
     On WSL, attempts to report the host's physical RAM via PowerShell.
     Falls back to /proc/meminfo MemTotal with an annotation when the
     true installed amount cannot be determined.
+
+    Also attempts to detect installed physical RAM via vcgencmd on
+    Raspberry Pi (``installed`` key).
     """
+    installed = _get_installed_ram()
     try:
         with open("/proc/meminfo") as f:
             meminfo = {}
@@ -191,17 +307,19 @@ def _get_memory_info():
                 return {
                     "total": _format_bytes(host_mem),
                     "used": used,
+                    "installed": installed,
                     "note": f"WSL allocated: {allocated}",
                 }
             return {
                 "total": allocated,
                 "used": used,
+                "installed": installed,
                 "note": "WSL allocated",
             }
 
-        return {"total": allocated, "used": used, "note": None}
+        return {"total": allocated, "used": used, "installed": installed, "note": None}
     except (FileNotFoundError, PermissionError):
-        return {"total": "N/A", "used": "N/A", "note": None}
+        return {"total": "N/A", "used": "N/A", "installed": installed, "note": None}
 
 
 def _get_storage_info():
@@ -264,7 +382,7 @@ def _get_device_model():
 def _get_temperature():
     """Return CPU temperature as a formatted string.
 
-    Priority: psutil sensors → vcgencmd → thermal_zone0 sysfs → None.
+    Priority: psutil sensors -> vcgencmd -> thermal_zone0 sysfs -> None.
     """
     # 1. psutil (cross-platform)
     if psutil is not None:
@@ -362,7 +480,7 @@ def _get_display_info(display_manager):
 
     Mirrors the ``_get_display_value`` / ``_parse_epd_code`` logic already used
     by the SystemStatus plugin so that the System Info page shows the identical
-    resolved display name.  No manual per-model catalog is maintained — the EPD
+    resolved display name.  No manual per-model catalog is maintained - the EPD
     code is parsed dynamically from the ``display_type`` config value.
     """
     device_config = display_manager.device_config
@@ -381,7 +499,7 @@ def _get_display_info(display_manager):
     return {"name": name, "type": display_type, "resolution": resolution}
 
 
-# ── Display name resolution (mirrors SystemStatus._get_display_value) ──
+# -- Display name resolution (mirrors SystemStatus._get_display_value) --
 
 _DISPLAY_NAME_MAP = {
     "inky": "Inky e-Paper",
@@ -399,10 +517,10 @@ def _parse_epd_code(code):
 
     Examples::
 
-        epd7in3e    → Waveshare 7.3inch e-Paper
-        epd5in83_v2 → Waveshare 5.83inch e-Paper V2
-        epd7in5b_hd → Waveshare 7.5inch e-Paper HD
-        epd13in3k   → Waveshare 13.3inch e-Paper
+        epd7in3e    -> Waveshare 7.3inch e-Paper
+        epd5in83_v2 -> Waveshare 5.83inch e-Paper V2
+        epd7in5b_hd -> Waveshare 7.5inch e-Paper HD
+        epd13in3k   -> Waveshare 13.3inch e-Paper
     """
     m = _EPD_PATTERN.match(code)
     if not m:
@@ -498,14 +616,14 @@ def _collect_system_info(display_manager):
         {
             "icon": "memory",
             "label": "Installed RAM",
-            "value": mem["total"],
+            "value": mem["installed"] or mem["total"],
             "secondary": _ram_secondary(mem),
         },
         {
             "icon": "cpu",
             "label": "CPU",
             "value": cpu["model"],
-            "secondary": cpu["freq"],
+            "secondary": cpu["cur_freq"] or cpu["freq"],
         },
         {
             "icon": "temperature",
@@ -524,10 +642,6 @@ def _collect_system_info(display_manager):
         },
     ]
 
-    ram_spec = mem["total"]
-    if mem.get("note"):
-        ram_spec += f" ({mem['note']})"
-
     device_specs = [
         {"label": "Device name", "value": _get_device_name(device_config)},
         {"label": "Hostname", "value": _get_hostname()},
@@ -535,11 +649,23 @@ def _collect_system_info(display_manager):
         {"label": "Architecture", "value": _get_architecture()},
         {"label": "CPU", "value": cpu["model"]},
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
-        {"label": "CPU frequency", "value": cpu["freq"] or "N/A"},
-        {"label": "RAM", "value": ram_spec},
+        {"label": "Current frequency", "value": cpu["cur_freq"] or "N/A"},
+        {"label": "Max frequency", "value": cpu["max_freq"] or "N/A"},
+    ]
+
+    if mem.get("installed"):
+        device_specs.append({"label": "Installed RAM", "value": mem["installed"]})
+    device_specs.append({"label": "Available to system", "value": mem["total"]})
+    device_specs.append(
+        {"label": "Used", "value": f"{mem['used']} of {mem['total']} used"}
+    )
+    if mem.get("note"):
+        device_specs.append({"label": "RAM note", "value": mem["note"]})
+
+    device_specs.extend([
         {"label": "Storage", "value": storage["total"]},
         {"label": "Storage used", "value": f"{storage['used']} of {storage['total']} used"},
-    ]
+    ])
 
     system_specs = [
         {"label": "OS name", "value": os_info["name"]},
