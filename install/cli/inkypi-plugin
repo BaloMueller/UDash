@@ -23,6 +23,14 @@ require_plugins_dir() {
     fi
 }
 
+validate_plugin_id() {
+    local id="$1"
+    if [[ ! "$id" =~ ^[a-z0-9_-]+$ ]]; then
+        echo "[ERROR] Invalid plugin_id '$id'. Only lowercase letters, digits, underscores, and hyphens are allowed."
+        exit 1
+    fi
+}
+
 # ----------------------------
 # INSTALL
 # ----------------------------
@@ -36,6 +44,7 @@ install_plugin() {
     REPO_URL="$2"
     DEST_DIR="$PLUGINS_DIR/$PLUGIN_ID"
 
+    validate_plugin_id "$PLUGIN_ID"
     require_plugins_dir
 
     # Workaround for .pyc files created by inkypi app with sudo
@@ -107,6 +116,7 @@ uninstall_plugin() {
     PLUGIN_ID="$1"
     DEST_DIR="$PLUGINS_DIR/$PLUGIN_ID"
 
+    validate_plugin_id "$PLUGIN_ID"
     require_plugins_dir
 
     if [[ ! -d "$DEST_DIR" ]]; then
@@ -171,6 +181,7 @@ update_plugin() {
     DEST_DIR="$PLUGINS_DIR/$PLUGIN_ID"
     INFO_FILE="$DEST_DIR/plugin-info.json"
 
+    validate_plugin_id "$PLUGIN_ID"
     require_plugins_dir
 
     # Check plugin is installed
