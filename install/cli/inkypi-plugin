@@ -10,6 +10,7 @@ usage() {
     echo ""
     echo "Plugin commands:"
     echo "  inkypi plugin install <plugin_id> <git_repository_url>"
+    echo "  inkypi plugin update <plugin_id>"
     echo "  inkypi plugin remove <plugin_id>"
     echo "  inkypi plugin list"
     echo ""
@@ -158,12 +159,146 @@ list_plugins() {
     } | column -t -s $'\t'
 }
 # ----------------------------
+# UPDATE
+# ----------------------------
+update_plugin() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: inkypi plugin update <plugin_id>"
+        exit 1
+    fi
+
+    PLUGIN_ID="$1"
+    DEST_DIR="$PLUGINS_DIR/$PLUGIN_ID"
+    INFO_FILE="$DEST_DIR/plugin-info.json"
+
+    require_plugins_dir
+
+    # Check plugin is installed
+    if [[ ! -d "$DEST_DIR" ]]; then
+        echo "[ERROR] Plugin '$PLUGIN_ID' is not installed."
+        exit 1
+    fi
+
+    # Check plugin-info.json exists
+    if [[ ! -f "$INFO_FILE" ]]; then
+        echo "[ERROR] Plugin '$PLUGIN_ID' has no plugin-info.json."
+        exit 1
+    fi
+
+    # Read repository URL from plugin-info.json
+    REPO_URL=$(jq -r '.repository // empty' "$INFO_FILE")
+
+    if [[ -z "$REPO_URL" ]]; then
+        echo "[ERROR] Plugin '$PLUGIN_ID' has no repository URL in plugin-info.json."
+        echo "[ERROR] Only third-party plugins with a saved repository can be updated."
+        exit 1
+    fi
+
+    echo "[INFO] Updating plugin '$PLUGIN_ID' from $REPO_URL"
+
+    # Download new version to a temporary directory first (rollback safety)
+    TMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    echo "[INFO] Downloading latest version..."
+
+    if ! git clone --depth 1 --filter=blob:none --sparse "$REPO_URL" "$TMP_DIR/repo" &>/dev/null; then
+        echo "[ERROR] Failed to clone repository: $REPO_URL"
+        exit 1
+    fi
+
+    # Check if the plugin folder exists in the repo
+    DEFAULT_BRANCH=$(git -C "$TMP_DIR/repo" symbolic-ref --short HEAD 2>/dev/null || echo main)
+    if ! git -C "$TMP_DIR/repo" ls-tree --name-only "$DEFAULT_BRANCH" | grep -qx "$PLUGIN_ID"; then
+        echo "[ERROR] Plugin '$PLUGIN_ID' does not exist in the repository."
+        exit 1
+    fi
+
+    cd "$TMP_DIR/repo"
+    if ! git sparse-checkout set "$PLUGIN_ID" &>/dev/null; then
+        echo "[ERROR] Failed to checkout plugin files."
+        exit 1
+    fi
+
+    # Validate that the download produced actual plugin files
+    if [[ ! -d "$TMP_DIR/repo/$PLUGIN_ID" ]]; then
+        echo "[ERROR] Downloaded repository does not contain '$PLUGIN_ID' directory."
+        exit 1
+    fi
+
+    # Prepare the new plugin files in a staging directory
+    STAGING_DIR="$TMP_DIR/staging"
+    mkdir -p "$STAGING_DIR"
+    shopt -s dotglob
+    mv "$TMP_DIR/repo/$PLUGIN_ID"/* "$STAGING_DIR/"
+
+    echo "[INFO] Download successful. Applying update..."
+
+    # Workaround for .pyc files created by inkypi app with sudo
+    sudo chown -R "$(whoami)":"$(whoami)" "$DEST_DIR" 2>/dev/null || true
+    chmod -R u+rw "$DEST_DIR" 2>/dev/null || true
+
+    # Backup current plugin directory for rollback
+    BACKUP_DIR="$TMP_DIR/backup"
+    cp -a "$DEST_DIR" "$BACKUP_DIR"
+
+    # Replace plugin files: remove old code files but preserve nothing yet
+    # We delete the old dir and copy in the new one
+    rm -rf "$DEST_DIR"
+    mkdir -p "$DEST_DIR"
+    cp -a "$STAGING_DIR"/. "$DEST_DIR/"
+
+    # Restore the repository field in plugin-info.json (in case the upstream removed it)
+    if [[ -f "$DEST_DIR/plugin-info.json" ]]; then
+        # Ensure repository URL is preserved
+        CURRENT_REPO=$(jq -r '.repository // empty' "$DEST_DIR/plugin-info.json")
+        if [[ -z "$CURRENT_REPO" ]]; then
+            jq --arg repo "$REPO_URL" '.repository = $repo' "$DEST_DIR/plugin-info.json" > "$TMP_DIR/info_tmp.json"
+            mv "$TMP_DIR/info_tmp.json" "$DEST_DIR/plugin-info.json"
+        fi
+    else
+        # If new version lacks plugin-info.json, restore the old one
+        cp "$BACKUP_DIR/plugin-info.json" "$DEST_DIR/plugin-info.json"
+    fi
+
+    echo "[INFO] Plugin files updated at $DEST_DIR"
+
+    # Install requirements if any
+    REQ_FILE="$DEST_DIR/requirements.txt"
+
+    if [[ -f "$REQ_FILE" ]]; then
+        echo "[INFO] requirements.txt found, installing dependencies..."
+
+        if [[ ! -d "$VENV_PATH" ]]; then
+            echo "[ERROR] Virtual environment not found at $VENV_PATH"
+            exit 1
+        fi
+
+        source "$VENV_PATH/bin/activate"
+        pip install -r "$REQ_FILE"
+        deactivate
+
+        echo "[INFO] Dependencies installed"
+    else
+        echo "[INFO] No requirements.txt found, skipping dependency install"
+    fi
+
+    echo "[INFO] Restarting $APPNAME service."
+    sudo systemctl restart "$APPNAME.service"
+
+    echo "[INFO] Updated plugin '$PLUGIN_ID' from $REPO_URL"
+}
+
+# ----------------------------
 # COMMAND ROUTER
 # ----------------------------
 
 case "$command" in
     install)
         install_plugin "$@"
+        ;;
+    update)
+        update_plugin "$@"
         ;;
     uninstall)
         uninstall_plugin "$@"
