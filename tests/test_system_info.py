@@ -471,7 +471,7 @@ class TestCollectSystemInfo:
     @patch("blueprints.system_info._get_device_model", return_value="Raspberry Pi 4")
     @patch("blueprints.system_info._get_os_info", return_value={"name": "Debian GNU/Linux", "version": "11", "distro": "debian", "pretty_name": "Debian GNU/Linux 11 (bullseye)"})
     @patch("blueprints.system_info._get_storage_info", return_value={"total": "32.0 GB", "used": "10.0 GB"})
-    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "installed": None, "note": None})
+    @patch("blueprints.system_info._get_memory_info", return_value={"total": "4.0 GB", "used": "2.0 GB", "installed": None, "allocated": None, "note": None})
     @patch("blueprints.system_info._get_cpu_info", return_value={"model": "ARM Cortex-A72", "freq": "1.5 GHz", "cur_freq": "1.2 GHz", "max_freq": "1.5 GHz", "cores": 4})
     @patch("blueprints.system_info._get_kernel_info", return_value="6.1.0-rpi7")
     @patch("blueprints.system_info._get_hostname", return_value="inkypi")

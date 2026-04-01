@@ -381,18 +381,20 @@ def _get_memory_info():
                     "total": _format_bytes(host_mem),
                     "used": used,
                     "installed": installed,
+                    "allocated": allocated,
                     "note": f"WSL allocated: {allocated}",
                 }
             return {
                 "total": allocated,
                 "used": used,
                 "installed": installed,
+                "allocated": allocated,
                 "note": "WSL allocated",
             }
 
-        return {"total": allocated, "used": used, "installed": installed, "note": None}
+        return {"total": allocated, "used": used, "installed": installed, "allocated": None, "note": None}
     except (FileNotFoundError, PermissionError):
-        return {"total": "N/A", "used": "N/A", "installed": installed, "note": None}
+        return {"total": "N/A", "used": "N/A", "installed": installed, "allocated": None, "note": None}
 
 
 def _get_storage_info():
@@ -726,14 +728,21 @@ def _collect_system_info(display_manager):
         {"label": "Max frequency", "value": cpu["max_freq"] or "N/A"},
     ]
 
-    if mem.get("installed"):
-        device_specs.append({"label": "Installed RAM", "value": mem["installed"]})
-    device_specs.append({"label": "Installed RAM", "value": mem["total"]})
-    device_specs.append(
-        {"label": "Usable RAM", "value": f"{mem['used']} of {mem['total']} used"}
-    )
-    if mem.get("note"):
-        device_specs.append({"label": "RAM used", "value": mem["note"]})
+    wsl_allocated = mem.get("allocated")
+    if wsl_allocated:
+        # WSL: total may be host physical RAM, allocated is the WSL-visible memory
+        if mem["total"] != wsl_allocated:
+            device_specs.append({"label": "Installed RAM", "value": mem["total"]})
+        device_specs.append({"label": "Usable RAM", "value": wsl_allocated})
+        device_specs.append({"label": "RAM used", "value": f"{mem['used']} of {wsl_allocated} used"})
+    else:
+        # Non-WSL: show vcgencmd physical RAM (RPi) if available, then system totals
+        if mem.get("installed"):
+            device_specs.append({"label": "Installed RAM", "value": mem["installed"]})
+        device_specs.append({"label": "Installed RAM", "value": mem["total"]})
+        device_specs.append(
+            {"label": "Usable RAM", "value": f"{mem['used']} of {mem['total']} used"}
+        )
 
     device_specs.extend([
         {"label": "Storage", "value": storage["total"]},
