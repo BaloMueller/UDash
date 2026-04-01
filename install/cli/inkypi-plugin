@@ -253,6 +253,7 @@ update_plugin() {
     rm -rf "$DEST_DIR"
     mkdir -p "$DEST_DIR"
     cp -a "$TMP_DIR/staging"/. "$DEST_DIR/"
+    git -C "$DEST_DIR" init -q
 
     # Ensure repository URL is preserved in plugin-info.json
     if [[ -f "$DEST_DIR/plugin-info.json" ]]; then
