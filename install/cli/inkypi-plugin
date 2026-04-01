@@ -225,6 +225,16 @@ update_plugin() {
     shopt -s dotglob
     mv "$TMP_DIR/repo/$PLUGIN_ID"/* "$TMP_DIR/staging/"
 
+    # Validate staged plugin structure before replacing existing installation
+    if [[ ! -f "$TMP_DIR/staging/plugin-info.json" ]]; then
+        echo "[ERROR] Downloaded plugin is missing required file 'plugin-info.json'. Aborting update."
+        exit 1
+    fi
+    if [[ ! -f "$TMP_DIR/staging/$PLUGIN_ID.py" ]]; then
+        echo "[ERROR] Downloaded plugin is missing required entrypoint '$PLUGIN_ID.py'. Aborting update."
+        exit 1
+    fi
+
     # All validated — now replace DEST_DIR
     if [[ -d "$DEST_DIR" ]]; then
         sudo chown -R "$(whoami)":"$(whoami)" "$DEST_DIR" 2>/dev/null || true
