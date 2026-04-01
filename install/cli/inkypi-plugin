@@ -68,13 +68,12 @@ install_plugin() {
         exit 1
     fi
 
-    cd "$DEST_DIR"
-    git sparse-checkout set "$PLUGIN_ID" &>/dev/null
+    git -C "$DEST_DIR" sparse-checkout set "$PLUGIN_ID" &>/dev/null
 
     # Move plugin files to root of DEST_DIR
     shopt -s dotglob
-    mv "$PLUGIN_ID"/* ./
-    rm -rf "$PLUGIN_ID"
+    mv "$DEST_DIR/$PLUGIN_ID"/* "$DEST_DIR/"
+    rm -rf "$DEST_DIR/$PLUGIN_ID"
 
     echo "[INFO] Plugin copied to $DEST_DIR"
 
@@ -223,8 +222,7 @@ update_plugin() {
         exit 1
     fi
 
-    cd "$TMP_DIR/repo"
-    git sparse-checkout set "$PLUGIN_ID" &>/dev/null
+    git -C "$TMP_DIR/repo" sparse-checkout set "$PLUGIN_ID" &>/dev/null
 
     if [[ ! -d "$TMP_DIR/repo/$PLUGIN_ID" ]]; then
         echo "[ERROR] Failed to checkout plugin files."
