@@ -80,17 +80,85 @@ def _read_sysfs_freq(path):
 
 
 def _get_cpu_cur_freq():
-    """Return current CPU frequency from sysfs as a formatted string or None."""
-    return _read_sysfs_freq(
-        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
-    )
+    """Return current CPU frequency as a formatted string or None.
+
+    Priority: sysfs scaling_cur_freq -> psutil current -> /proc/cpuinfo cpu MHz.
+    """
+    # 1. sysfs (Linux / Raspberry Pi)
+    val = _read_sysfs_freq("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+    if val:
+        return val
+
+    # 2. psutil current frequency
+    if psutil is not None:
+        try:
+            freq = psutil.cpu_freq()
+            if freq is not None and freq.current and freq.current > 0:
+                return f"{round(freq.current / 1000, 1)} GHz"
+        except Exception:
+            pass
+
+    # 3. /proc/cpuinfo "cpu MHz"
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.lower().startswith("cpu mhz"):
+                    mhz = float(line.split(":")[1].strip())
+                    if mhz > 0:
+                        return f"{round(mhz / 1000, 1)} GHz"
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+
+    return None
 
 
 def _get_cpu_max_freq():
-    """Return max CPU frequency from sysfs as a formatted string or None."""
-    return _read_sysfs_freq(
-        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq"
-    )
+    """Return max CPU frequency as a formatted string or None.
+
+    Priority: sysfs scaling_max_freq -> psutil max -> lscpu CPU max MHz.
+    """
+    # 1. sysfs (Linux / Raspberry Pi)
+    val = _read_sysfs_freq("/sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq")
+    if val:
+        return val
+
+    # 2. psutil max frequency
+    if psutil is not None:
+        try:
+            freq = psutil.cpu_freq()
+            if freq is not None and freq.max and freq.max > 0:
+                return f"{round(freq.max / 1000, 1)} GHz"
+        except Exception:
+            pass
+
+    # 3. lscpu (available on most Linux distros and WSL)
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["lscpu"], capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            max_mhz = None
+            cur_mhz = None
+            for line in result.stdout.splitlines():
+                lower = line.lower()
+                if "cpu max mhz" in lower:
+                    try:
+                        max_mhz = float(line.split(":")[1].strip().replace(",", "."))
+                    except ValueError:
+                        pass
+                elif "cpu mhz" in lower and "max" not in lower and "min" not in lower:
+                    try:
+                        cur_mhz = float(line.split(":")[1].strip().replace(",", "."))
+                    except ValueError:
+                        pass
+            mhz = max_mhz or cur_mhz
+            if mhz and mhz > 0:
+                return f"{round(mhz / 1000, 1)} GHz"
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
+        pass
+
+    return None
 
 
 # -- ARM CPU part ID to model name mapping --
@@ -196,6 +264,11 @@ def _get_cpu_info():
     freq = _get_cpu_freq()
     cur_freq = _get_cpu_cur_freq()
     max_freq = _get_cpu_max_freq()
+    # Cross-fallback: if one is unavailable, use the other or the general freq
+    if not cur_freq:
+        cur_freq = max_freq or freq
+    if not max_freq:
+        max_freq = cur_freq or freq
     result = {
         "model": model,
         "freq": freq,
