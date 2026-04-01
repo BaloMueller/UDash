@@ -644,7 +644,7 @@ def _collect_system_info(display_manager):
 
     device_specs = [
         {"label": "Device name", "value": _get_device_name(device_config)},
-        {"label": "Hostname", "value": _get_hostname()},
+        {"label": "Network name", "value": _get_hostname()},
         {"label": "Model", "value": _get_device_model()},
         {"label": "Architecture", "value": _get_architecture()},
         {"label": "CPU", "value": cpu["model"]},
@@ -655,12 +655,12 @@ def _collect_system_info(display_manager):
 
     if mem.get("installed"):
         device_specs.append({"label": "Installed RAM", "value": mem["installed"]})
-    device_specs.append({"label": "Available to system", "value": mem["total"]})
+    device_specs.append({"label": "Installed RAM", "value": mem["total"]})
     device_specs.append(
-        {"label": "Used", "value": f"{mem['used']} of {mem['total']} used"}
+        {"label": "Usable RAM", "value": f"{mem['used']} of {mem['total']} used"}
     )
     if mem.get("note"):
-        device_specs.append({"label": "RAM note", "value": mem["note"]})
+        device_specs.append({"label": "RAM used", "value": mem["note"]})
 
     device_specs.extend([
         {"label": "Storage", "value": storage["total"]},

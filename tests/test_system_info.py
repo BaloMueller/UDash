@@ -443,15 +443,15 @@ class TestCollectSystemInfo:
         # Verify device specs
         dev_labels = [s["label"] for s in device_specs]
         assert "Device name" in dev_labels
-        assert "Hostname" in dev_labels
+        assert "Network name" in dev_labels
         assert "Model" in dev_labels
         assert "Architecture" in dev_labels
         assert "CPU" in dev_labels
         assert "CPU cores" in dev_labels
         assert "Current frequency" in dev_labels
         assert "Max frequency" in dev_labels
-        assert "Available to system" in dev_labels
-        assert "Used" in dev_labels
+        assert "Installed RAM" in dev_labels
+        assert "Usable RAM" in dev_labels
         assert "Storage" in dev_labels
         assert "Storage used" in dev_labels
         # device_specs count varies based on installed RAM availability
