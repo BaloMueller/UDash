@@ -444,7 +444,7 @@ class TestCollectSystemInfo:
         dev_labels = [s["label"] for s in device_specs]
         assert "Device name" in dev_labels
         assert "Network name" in dev_labels
-        assert "Model" in dev_labels
+        assert "Model" not in dev_labels
         assert "Architecture" in dev_labels
         assert "CPU" in dev_labels
         assert "CPU cores" in dev_labels

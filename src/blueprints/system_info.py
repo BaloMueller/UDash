@@ -726,7 +726,6 @@ def _collect_system_info(display_manager):
     device_specs = [
         {"label": "Device name", "value": _get_device_name(device_config)},
         {"label": "Network name", "value": _get_hostname()},
-        {"label": "Model", "value": _get_device_model()},
         {"label": "Architecture", "value": _get_architecture()},
         {"label": "CPU", "value": cpu["model"]},
         {"label": "CPU cores", "value": str(cpu["cores"]) if cpu["cores"] else "N/A"},
