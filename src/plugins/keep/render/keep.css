@@ -1,0 +1,39 @@
+:root {
+  --used-height: calc(min(20dvw, 20dvh) + 10px);
+  --available-height: round(down, calc(100dvh - var(--used-height)), min(5dvw, 5dvh));
+}
+.keep-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Jost";
+  height: 100%;
+  width: 100%;
+}
+.keep-wrapper {
+  width: 90%;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+}
+.title {
+  font-size: min(11dvw, 11dvh);
+  font-weight: bold;
+  letter-spacing: .3px;
+  line-height: 1;
+}
+.subtitle {
+  margin: min(2dvw, 2dvh);
+  font-size: min(5dvw, 5dvh);
+  line-height: 1;
+}
+.note_item {
+  display: -webkit-box;
+  -webkit-line-clamp: calc(var(--available-height) / min(5dvw, 5dvh));
+  -webkit-box-orient: vertical;
+  line-height: 1;
+  font-size: min(5dvw, 5dvh);
+  overflow: hidden;
+  white-space: pre-wrap;
+  text-align: left;
+}
