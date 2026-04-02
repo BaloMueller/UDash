@@ -744,10 +744,12 @@ def _collect_system_info(display_manager):
         # Non-WSL: show vcgencmd physical RAM (RPi) if available, then system totals
         if mem.get("installed"):
             device_specs.append({"label": "Installed RAM", "value": mem["installed"]})
-        device_specs.append({"label": "Installed RAM", "value": mem["total"]})
-        device_specs.append(
-            {"label": "Usable RAM", "value": f"{mem['used']} of {mem['total']} used"}
-        )
+            device_specs.append({"label": "Usable RAM", "value": mem["total"]})
+            device_specs.append({"label": "RAM used", "value": f"{mem['used']} of {mem['total']} used"})
+        else:
+            # Fallback when physical 'installed' value is unavailable
+            device_specs.append({"label": "Installed RAM", "value": mem["total"]})
+            device_specs.append({"label": "Usable RAM", "value": f"{mem['used']} of {mem['total']} used"})
 
     device_specs.extend([
         {"label": "Storage", "value": storage["total"]},
