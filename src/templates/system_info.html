@@ -138,10 +138,12 @@
             <h2 class="sysinfo-specs-title">Device specifications</h2>
             <div class="sysinfo-specs-table">
                 {% for spec in device_specs %}
+                {% if spec.label != "Model" %}
                 <div class="sysinfo-spec-row">
                     <span class="sysinfo-spec-label">{{ spec.label }}</span>
                     <span class="sysinfo-spec-value">{{ spec.value }}</span>
                 </div>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>
