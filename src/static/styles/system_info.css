@@ -262,8 +262,18 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
-.sysinfo-plugin-chip--thirdparty:hover .sysinfo-plugin-tooltip {
+.sysinfo-plugin-chip--thirdparty:hover .sysinfo-plugin-tooltip,
+.sysinfo-plugin-chip--thirdparty:focus .sysinfo-plugin-tooltip,
+.sysinfo-plugin-chip--thirdparty:focus-visible .sysinfo-plugin-tooltip,
+.sysinfo-plugin-chip--thirdparty:focus-within .sysinfo-plugin-tooltip {
     display: flex;
+}
+
+.sysinfo-plugin-chip--thirdparty:focus,
+.sysinfo-plugin-chip--thirdparty:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--input-focus);
+    background-color: var(--bg-secondary);
 }
 
 .sysinfo-plugin-none {
