@@ -619,21 +619,17 @@ class TestCollectPluginInfo:
             assert "name" in p
 
     def test_empty_when_dir_missing(self, tmp_path):
-        with patch("blueprints.system_info.Path.__new__") as mock_path:
-            pass
+        # Point the plugins directory to a non-existent path and call the real
+        # implementation to verify the fallback behavior.
         fake_dir = tmp_path / "nonexistent"
-        with patch(
-            "blueprints.system_info._collect_plugin_info"
-        ) as mock_fn:
-            mock_fn.return_value = {
-                "builtin": [],
-                "third_party": [],
-                "total": 0,
-                "builtin_count": 0,
-                "third_party_count": 0,
-            }
-            result = mock_fn()
-            assert result["total"] == 0
+        with patch("blueprints.system_info._PLUGINS_DIR", fake_dir):
+            result = _collect_plugin_info()
+
+        assert result["total"] == 0
+        assert result["builtin_count"] == 0
+        assert result["third_party_count"] == 0
+        assert result["builtin"] == []
+        assert result["third_party"] == []
 
     def test_third_party_detection(self, tmp_path):
         import json
