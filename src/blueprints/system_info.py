@@ -5,6 +5,7 @@ import os
 import platform
 import re
 import socket
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -880,8 +881,19 @@ def _collect_plugin_info():
 
         plugin_data = {"id": plugin_id, "name": display_name}
 
-        if repository:
-            plugin_data["repository"] = repository
+        # If metadata contains a repository the plugin is third-party.
+        # Only include the `repository` field when it's a safe http(s)
+        # URL with a non-empty netloc; otherwise omit the field but keep
+        # the plugin classified as third-party.
+        repo = (repository or "").strip()
+        if repo:
+            try:
+                parsed = urlparse(repo)
+                scheme = (parsed.scheme or "").lower()
+                if scheme in ("http", "https") and parsed.netloc:
+                    plugin_data["repository"] = repo
+            except Exception:
+                pass
             third_party.append(plugin_data)
         else:
             builtin.append(plugin_data)
