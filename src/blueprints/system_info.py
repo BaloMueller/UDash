@@ -536,11 +536,16 @@ def _get_local_ip():
     """Return the local IP address."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(2)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        try:
+            s.settimeout(2)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            return ip
+        finally:
+            try:
+                s.close()
+            except Exception:
+                pass
     except (OSError, socket.error):
         return "N/A"
 
