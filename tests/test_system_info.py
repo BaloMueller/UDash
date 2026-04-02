@@ -523,8 +523,9 @@ class TestCollectOverview:
         mock_refresh_info = MagicMock()
         mock_refresh_info.plugin_id = "clock"
         mock_refresh_info.refresh_time = "2026-03-27T10:00:00+00:00"
-        mock_refresh_info.get_refresh_datetime.return_value = MagicMock(
-            tzinfo=True
+        from datetime import datetime, timezone
+        mock_refresh_info.get_refresh_datetime.return_value = datetime(
+            2026, 3, 27, 10, 0, tzinfo=timezone.utc
         )
 
         mock_config = MagicMock()
