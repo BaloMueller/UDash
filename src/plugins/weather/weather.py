@@ -732,14 +732,14 @@ class Weather(BasePlugin):
             "icon": self.get_plugin_dir('icons/visibility.png')
         })
 
-        aqi = air_quality.get('list', [])[0].get("main", {}).get("aqi")
+        aqi = (air_quality.get('list') or [{}])[0].get("main", {}).get("aqi")
         locale = LOCALE_DATA.get(language)
         aqi_scale = locale["ui"]["aqi_scale"] if locale and "ui" in locale else ["Good", "Fair", "Moderate", "Poor", "Very Poor"]
         data_points.append({
             "key": "Air Quality",
             "label": get_ui_label("air_quality", language, "Air Quality"),
             "measurement": aqi,
-            "unit": aqi_scale[int(aqi)-1],
+            "unit": aqi_scale[int(aqi)-1] if (aqi is not None and str(aqi).isdigit() and 1 <= int(aqi) <= len(aqi_scale)) else "N/A",
             "icon": self.get_plugin_dir('icons/aqi.png')
         })
 
