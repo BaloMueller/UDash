@@ -60,6 +60,74 @@ OPEN_METEO_UNIT_PARAMS = {
     "imperial": "temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch"
 }
 
+# Locale data for date/day name translation.
+# days: full weekday names (0=Monday), days_short: abbreviated (0=Monday),
+# months: full month names (0=January).
+# "en": None uses strftime directly.
+LOCALE_DATA = {
+    "de": {
+        "days":       ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+        "days_short": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+        "months":     ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                       "Juli", "August", "September", "Oktober", "November", "Dezember"],
+    },
+    "en": None,  # English uses strftime directly
+    "es": {
+        "days":       ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"],
+        "days_short": ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
+        "months":     ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                       "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+    },
+    "fr": {
+        "days":       ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"],
+        "days_short": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+        "months":     ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                       "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"],
+    },
+    "id": {
+        "days":       ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"],
+        "days_short": ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"],
+        "months":     ["Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                       "Juli", "Agustus", "September", "Oktober", "November", "Desember"],
+    },
+    "it": {
+        "days":       ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"],
+        "days_short": ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"],
+        "months":     ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                       "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],
+    },
+    "nl": {
+        "days":       ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"],
+        "days_short": ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"],
+        "months":     ["Januari", "Februari", "Maart", "April", "Mei", "Juni",
+                       "Juli", "Augustus", "September", "Oktober", "November", "December"],
+    },
+    "pt": {
+        "days":       ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"],
+        "days_short": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+        "months":     ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
+    },
+}
+
+
+def get_localized_date(dt, language):
+    """Return a localized date string equivalent to strftime('%A, %B %d')."""
+    locale = LOCALE_DATA.get(language)
+    if locale:
+        day_name = locale["days"][dt.weekday()]
+        month_name = locale["months"][dt.month - 1]
+        return f"{day_name}, {month_name} {dt.day:02d}"
+    return dt.strftime("%A, %B %d")
+
+
+def get_localized_day_short(dt, language):
+    """Return a localized abbreviated weekday name equivalent to strftime('%a')."""
+    locale = LOCALE_DATA.get(language)
+    if locale:
+        return locale["days_short"][dt.weekday()]
+    return dt.strftime("%a")
+
 class Weather(BasePlugin):
     def generate_settings_template(self):
         template_params = super().generate_settings_template()
@@ -83,6 +151,9 @@ class Weather(BasePlugin):
 
         weather_provider = settings.get('weatherProvider', 'OpenWeatherMap')
         title = settings.get('customTitle', '')
+        language = settings.get('language', 'en')
+        if language not in LOCALE_DATA:
+            language = 'en'
 
         timezone = device_config.get_config("timezone", default="America/New_York")
         time_format = device_config.get_config("time_format", default="12h")
@@ -100,15 +171,15 @@ class Weather(BasePlugin):
                 if settings.get('weatherTimeZone', 'locationTimeZone') == 'locationTimeZone':
                     logger.info("Using location timezone for OpenWeatherMap data.")
                     wtz = self.parse_timezone(weather_data)
-                    template_params = self.parse_weather_data(weather_data, aqi_data, wtz, units, time_format, lat)
+                    template_params = self.parse_weather_data(weather_data, aqi_data, wtz, units, time_format, lat, language)
                 else:
                     logger.info("Using configured timezone for OpenWeatherMap data.")
-                    template_params = self.parse_weather_data(weather_data, aqi_data, tz, units, time_format, lat)
+                    template_params = self.parse_weather_data(weather_data, aqi_data, tz, units, time_format, lat, language)
             elif weather_provider == "OpenMeteo":
                 forecast_days = 7
                 weather_data = self.get_open_meteo_data(lat, long, units, forecast_days + 1)
                 aqi_data = self.get_open_meteo_air_quality(lat, long)
-                template_params = self.parse_open_meteo_data(weather_data, aqi_data, tz, units, time_format, lat)
+                template_params = self.parse_open_meteo_data(weather_data, aqi_data, tz, units, time_format, lat, language)
             else:
                 raise RuntimeError(f"Unknown weather provider: {weather_provider}")
 
@@ -137,7 +208,7 @@ class Weather(BasePlugin):
             raise RuntimeError("Failed to take screenshot, please check logs.")
         return image
 
-    def parse_weather_data(self, weather_data, aqi_data, tz, units, time_format, lat):
+    def parse_weather_data(self, weather_data, aqi_data, tz, units, time_format, lat, language="en"):
         current = weather_data.get("current")
         daily_forecast = weather_data.get("daily", [])
         dt = datetime.fromtimestamp(current.get('dt'), tz=timezone.utc).astimezone(tz)
@@ -150,7 +221,7 @@ class Weather(BasePlugin):
             if current_icon.endswith('n'):
                 current_icon = current_icon.replace("n", "d")
         data = {
-            "current_date": dt.strftime("%A, %B %d"),
+            "current_date": get_localized_date(dt, language),
             "current_day_icon": self.get_plugin_dir(f'icons/{current_icon}.png'),
             "current_temperature": str(round(current.get("temp"))),
             "feels_like": str(round(current.get("feels_like"))),
@@ -158,13 +229,13 @@ class Weather(BasePlugin):
             "units": units,
             "time_format": time_format
         }
-        data['forecast'] = self.parse_forecast(weather_data.get('daily'), tz, current_suffix, lat)
+        data['forecast'] = self.parse_forecast(weather_data.get('daily'), tz, current_suffix, lat, language)
         data['data_points'] = self.parse_data_points(weather_data, aqi_data, tz, units, time_format)
 
         data['hourly_forecast'] = self.parse_hourly(weather_data.get('hourly'), tz, time_format, units, daily_forecast)
         return data
 
-    def parse_open_meteo_data(self, weather_data, aqi_data, tz, units, time_format, lat):
+    def parse_open_meteo_data(self, weather_data, aqi_data, tz, units, time_format, lat, language="en"):
         current = weather_data.get("current", {})
         daily = weather_data.get('daily', {})
         dt = datetime.fromisoformat(current.get('time')).astimezone(tz) if current.get('time') else datetime.now(tz)
@@ -175,7 +246,7 @@ class Weather(BasePlugin):
         temperature_conversion = 273.15 if units == "standard" else 0.
 
         data = {
-            "current_date": dt.strftime("%A, %B %d"),
+            "current_date": get_localized_date(dt, language),
             "current_day_icon": self.get_plugin_dir(f'icons/{current_icon}.png'),
             "current_temperature": str(round(current.get("temperature", 0) + temperature_conversion)),
             "feels_like": str(round(current.get("apparent_temperature", current.get("temperature", 0)) + temperature_conversion)),
@@ -184,7 +255,7 @@ class Weather(BasePlugin):
             "time_format": time_format
         }
 
-        data['forecast'] = self.parse_open_meteo_forecast(weather_data.get('daily', {}), units, tz, is_day, lat)
+        data['forecast'] = self.parse_open_meteo_forecast(weather_data.get('daily', {}), units, tz, is_day, lat, language)
         data['data_points'] = self.parse_open_meteo_data_points(weather_data, aqi_data, units, tz, time_format)
         
         data['hourly_forecast'] = self.parse_open_meteo_hourly(weather_data.get('hourly', {}), units, tz, time_format, daily.get('sunrise', []), daily.get('sunset', []))
@@ -260,7 +331,7 @@ class Weather(BasePlugin):
         
         return self.get_plugin_dir(f"icons/{phase_name}.png")
 
-    def parse_forecast(self, daily_forecast, tz, current_suffix, lat):
+    def parse_forecast(self, daily_forecast, tz, current_suffix, lat, language="en"):
         """
         - daily_forecast: list of daily entries from One‑Call v3 (each has 'dt', 'weather', 'temp', 'moon_phase')
         - tz: your target tzinfo (e.g. from zoneinfo or pytz)
@@ -311,7 +382,7 @@ class Weather(BasePlugin):
 
             # --- date & temps ---
             dt = datetime.fromtimestamp(day["dt"], tz=timezone.utc).astimezone(tz)
-            day_label = dt.strftime("%a")
+            day_label = get_localized_day_short(dt, language)
 
             forecast.append(
                 {
@@ -326,7 +397,7 @@ class Weather(BasePlugin):
 
         return forecast
         
-    def parse_open_meteo_forecast(self, daily_data, units, tz, is_day, lat):
+    def parse_open_meteo_forecast(self, daily_data, units, tz, is_day, lat, language="en"):
         """
         Parse the daily forecast from Open-Meteo API and calculate moon phase and illumination using the local 'astral' library.
         """
@@ -342,7 +413,7 @@ class Weather(BasePlugin):
 
         for i in range(0, len(times)): 
             dt = datetime.fromisoformat(times[i]).replace(tzinfo=timezone.utc).astimezone(tz)
-            day_label = dt.strftime("%a")
+            day_label = get_localized_day_short(dt, language)
 
             code = weather_codes[i] if i < len(weather_codes) else 0
             weather_icon = self.map_weather_code_to_icon(code, is_day=1)
