@@ -739,7 +739,7 @@ class Weather(BasePlugin):
             "key": "Air Quality",
             "label": get_ui_label("air_quality", language, "Air Quality"),
             "measurement": aqi,
-            "unit": aqi_scale[int(aqi)-1] if (aqi is not None and str(aqi).isdigit() and 1 <= int(aqi) <= len(aqi_scale)) else "N/A",
+            "unit": aqi_scale[int(float(aqi))-1] if (aqi is not None and (isinstance(aqi, (int, float)) or (isinstance(aqi, str) and aqi.replace('.', '', 1).isdigit())) and 1 <= int(float(aqi)) <= len(aqi_scale)) else "N/A",
             "icon": self.get_plugin_dir('icons/aqi.png')
         })
 
