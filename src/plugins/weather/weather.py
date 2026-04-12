@@ -848,7 +848,8 @@ class Weather(BasePlugin):
         })
 
         # Visibility
-        current_visibility = "N/A"
+        current_visibility = None
+        at_max_visibility = False
         visibility_hourly_times = hourly_data.get('time', [])
         visibility_values = hourly_data.get('visibility', [])
         if units == "imperial":
@@ -866,9 +867,12 @@ class Weather(BasePlugin):
             except ValueError:
                 logger.warning(f"Could not parse time string {time_str} for visibility.")
                 continue
-        visibility_str = f"{current_visibility:.1f}"
-        if at_max_visibility:
-            visibility_str = u"\u2265" + visibility_str
+        if current_visibility is None:
+            visibility_str = "N/A"
+        else:
+            visibility_str = f"{current_visibility:.1f}"
+            if at_max_visibility:
+                visibility_str = u"\u2265" + visibility_str
         data_points.append({
             "key": "Visibility",
             "label": get_ui_label("visibility", language, "Visibility"),
