@@ -215,10 +215,10 @@
 
         if (loadPluginSettings) {
             const language = document.getElementById('language');
-            language.value = pluginSettings.language || 'en';
-            if (!language.querySelector(`option[value="${pluginSettings.language}"]`)) {
-                language.value = 'en';
-            }
+            const hasConfiguredLanguage = Array.from(language.options).some(
+                (option) => option.value === pluginSettings.language
+            );
+            language.value = hasConfiguredLanguage ? pluginSettings.language : 'en';
 
             document.getElementById('latitude').value = pluginSettings.latitude;
             document.getElementById('longitude').value = pluginSettings.longitude;
