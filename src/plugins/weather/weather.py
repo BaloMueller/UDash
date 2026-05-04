@@ -369,16 +369,17 @@ class Weather(BasePlugin):
         forecast = []
 
         for i in range(0, len(times)):
-            dt = datetime.fromisoformat(times[i]).replace(tzinfo=timezone.utc).astimezone(tz)
-            day_label_en = dt.strftime("%a")
+            local_date = date.fromisoformat(times[i])
+            day_label_en = local_date.strftime("%a")
             day_label = translate_day(language, day_label_en)
+            dt = datetime.combine(local_date, datetime.min.time()).replace(tzinfo=tz)
 
             code = weather_codes[i] if i < len(weather_codes) else 0
             weather_icon = self.map_weather_code_to_icon(code, is_day=1)
             weather_icon_path = self.get_plugin_dir(f"icons/{weather_icon}.png")
 
             timestamp = int(dt.replace(hour=12, minute=0, second=0).timestamp())
-            target_date: date = dt.date() + timedelta(days=1)
+            target_date = local_date
 
             try:
                 phase_age = moon.phase(target_date)
