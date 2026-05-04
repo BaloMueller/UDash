@@ -38,7 +38,7 @@
             <div class="data-point-label">{{ dp.label }}</div>
             <div class="data-point-measurement">
 			        {{ dp.measurement }}{% if dp.unit %}<span class="data-point-unit">{{ dp.unit }}</span>{% endif %}
-              {% if dp.label == "Wind" %}
+              {% if dp.key == "Wind" %}
                 <span class="wind-arrow-symbol">{{ dp.arrow }}</span>
               {% endif %}
 		    	 </div>

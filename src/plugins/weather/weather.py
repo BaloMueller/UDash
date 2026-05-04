@@ -64,6 +64,181 @@ OPEN_METEO_UNIT_PARAMS = {
     "imperial": "temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch"
 }
 
+# Locale data for date/day name translation.
+# days: full weekday names (0=Monday), days_short: abbreviated (0=Monday),
+# months: full month names (0=January).
+# ui: translated UI strings used in the weather template and data points.
+# "en": None uses strftime/English directly.
+LOCALE_DATA = {
+    "de": {
+        "days":       ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+        "days_short": ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+        "months":     ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                       "Juli", "August", "September", "Oktober", "November", "Dezember"],
+        "ui": {
+            "last_refresh": "Letzte Aktualisierung",
+            "feels_like": "Gefühlt",
+            "sunrise": "Sonnenaufgang",
+            "sunset": "Sonnenuntergang",
+            "wind": "Wind",
+            "humidity": "Luftfeuchtigkeit",
+            "pressure": "Luftdruck",
+            "uv_index": "UV-Index",
+            "visibility": "Sichtweite",
+            "air_quality": "Luftqualität",
+            "aqi_scale": ["Gut", "Mäßig", "Mittelmäßig", "Schlecht", "Sehr schlecht"],
+            "aqi_scale_om": ["Gut", "Mäßig", "Mittelmäßig", "Schlecht", "Sehr schlecht", "Extrem schlecht"],
+        },
+    },
+    "en": None,  # English uses strftime directly
+    "es": {
+        "days":       ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"],
+        "days_short": ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
+        "months":     ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                       "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"],
+        "ui": {
+            "last_refresh": "Última actualización",
+            "feels_like": "Sensación",
+            "sunrise": "Amanecer",
+            "sunset": "Atardecer",
+            "wind": "Viento",
+            "humidity": "Humedad",
+            "pressure": "Presión",
+            "uv_index": "Índice UV",
+            "visibility": "Visibilidad",
+            "air_quality": "Calidad aire",
+            "aqi_scale":    ["Buena", "Aceptable", "Moderada", "Mala", "Muy mala"],
+            "aqi_scale_om": ["Buena", "Aceptable", "Moderada", "Mala", "Muy mala", "Extrema"],
+        },
+    },
+    "fr": {
+        "days":       ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"],
+        "days_short": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+        "months":     ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+                       "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"],
+        "ui": {
+            "last_refresh": "Dernière mise à jour",
+            "feels_like": "Ressenti",
+            "sunrise": "Lever du soleil",
+            "sunset": "Coucher du soleil",
+            "wind": "Vent",
+            "humidity": "Humidité",
+            "pressure": "Pression",
+            "uv_index": "Indice UV",
+            "visibility": "Visibilité",
+            "air_quality": "Qualité de l'air",
+            "aqi_scale": ["Bonne", "Correcte", "Moyenne", "Mauvaise", "Très mauvaise"],
+            "aqi_scale_om": ["Bonne", "Correcte", "Moyenne", "Mauvaise", "Très mauvaise", "Extrêmement mauvaise"],
+        },
+    },
+    "id": {
+        "days":       ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"],
+        "days_short": ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"],
+        "months":     ["Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                       "Juli", "Agustus", "September", "Oktober", "November", "Desember"],
+        "ui": {
+            "last_refresh": "Pembaruan terakhir",
+            "feels_like": "Terasa",
+            "sunrise": "Matahari terbit",
+            "sunset": "Matahari terbenam",
+            "wind": "Angin",
+            "humidity": "Kelembaban",
+            "pressure": "Tekanan",
+            "uv_index": "Indeks UV",
+            "visibility": "Jarak pandang",
+            "air_quality": "Kualitas udara",
+            "aqi_scale":    ["Baik", "Sedang", "Buruk ringan", "Buruk", "Sangat buruk"],
+            "aqi_scale_om": ["Baik", "Sedang", "Buruk ringan", "Buruk", "Sangat buruk", "Berbahaya"],
+        },
+    },
+    "it": {
+        "days":       ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"],
+        "days_short": ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"],
+        "months":     ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                       "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"],
+        "ui": {
+            "last_refresh": "Ultimo aggiornamento",
+            "feels_like": "Percepita",
+            "sunrise": "Alba",
+            "sunset": "Tramonto",
+            "wind": "Vento",
+            "humidity": "Umidità",
+            "pressure": "Pressione",
+            "uv_index": "Indice UV",
+            "visibility": "Visibilità",
+            "air_quality": "Qualità aria",
+            "aqi_scale":    ["Buona", "Discreta", "Moderata", "Scarsa", "Pessima"],
+            "aqi_scale_om": ["Buona", "Discreta", "Moderata", "Scarsa", "Pessima", "Pericolosa"],
+        },
+    },
+    "nl": {
+        "days":       ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"],
+        "days_short": ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"],
+        "months":     ["Januari", "Februari", "Maart", "April", "Mei", "Juni",
+                       "Juli", "Augustus", "September", "Oktober", "November", "December"],
+        "ui": {
+            "last_refresh": "Laatste verversing",
+            "feels_like": "Voelt als",
+            "sunrise": "Zonsopgang",
+            "sunset": "Zonsondergang",
+            "wind": "Wind",
+            "humidity": "Vochtigheid",
+            "pressure": "Luchtdruk",
+            "uv_index": "UV-index",
+            "visibility": "Zichtbaarheid",
+            "air_quality": "Luchtkwaliteit",
+            "aqi_scale":    ["Goed", "Matig", "Onvoldoende", "Slecht", "Zeer slecht"],
+            "aqi_scale_om": ["Goed", "Matig", "Onvoldoende", "Slecht", "Zeer slecht", "Gevaarlijk"],
+        },
+    },
+    "pt": {
+        "days":       ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"],
+        "days_short": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+        "months":     ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
+        "ui": {
+            "last_refresh": "Última atualização",
+            "feels_like": "Sensação",
+            "sunrise": "Nascer do sol",
+            "sunset": "Pôr do sol",
+            "wind": "Vento",
+            "humidity": "Umidade",
+            "pressure": "Pressão",
+            "uv_index": "Índice UV",
+            "visibility": "Visibilidade",
+            "air_quality": "Qualidade ar",
+            "aqi_scale":    ["Boa", "Razoável", "Moderada", "Ruim", "Muito ruim"],
+            "aqi_scale_om": ["Boa", "Razoável", "Moderada", "Ruim", "Muito ruim", "Péssima"],
+        },
+    },
+}
+
+
+def get_localized_date(dt, language):
+    """Return a localized date string equivalent to strftime('%A, %B %d')."""
+    locale = LOCALE_DATA.get(language)
+    if locale:
+        day_name = locale["days"][dt.weekday()]
+        month_name = locale["months"][dt.month - 1]
+        return f"{day_name}, {month_name} {dt.day:02d}"
+    return dt.strftime("%A, %B %d")
+
+
+def get_localized_day_short(dt, language):
+    """Return a localized abbreviated weekday name equivalent to strftime('%a')."""
+    locale = LOCALE_DATA.get(language)
+    if locale:
+        return locale["days_short"][dt.weekday()]
+    return dt.strftime("%a")
+
+
+def get_ui_label(key, language, default=None):
+    """Return a translated UI string for the given key and language."""
+    locale = LOCALE_DATA.get(language)
+    if locale and "ui" in locale:
+        return locale["ui"].get(key, default or key)
+    return default or key
+
 class Weather(BasePlugin):
     def generate_settings_template(self):
         template_params = super().generate_settings_template()
@@ -568,7 +743,9 @@ class Weather(BasePlugin):
             "icon": self.get_plugin_dir('icons/visibility.png')
         })
 
-        aqi = air_quality.get('list', [])[0].get("main", {}).get("aqi")
+        aqi = (air_quality.get('list') or [{}])[0].get("main", {}).get("aqi")
+        locale = LOCALE_DATA.get(language)
+        aqi_scale = locale["ui"]["aqi_scale"] if locale and "ui" in locale else ["Good", "Fair", "Moderate", "Poor", "Very Poor"]
         data_points.append({
             "label": get_translation(language, "air_quality"),
             "measurement": aqi,
