@@ -176,3 +176,4 @@ mock_display_output/
 .DS_Store
 src/config/device.json
 src/static/images/current_image.png
+/src/static/styles/select2.min.css
