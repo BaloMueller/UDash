@@ -372,13 +372,8 @@ class Weather(BasePlugin):
             local_date = date.fromisoformat(times[i])
             day_label_en = local_date.strftime("%a")
             day_label = translate_day(language, day_label_en)
-            dt = datetime.combine(local_date, datetime.min.time()).replace(tzinfo=tz)
-
-            code = weather_codes[i] if i < len(weather_codes) else 0
-            weather_icon = self.map_weather_code_to_icon(code, is_day=1)
-            weather_icon_path = self.get_plugin_dir(f"icons/{weather_icon}.png")
-
-            timestamp = int(dt.replace(hour=12, minute=0, second=0).timestamp())
+            dt = datetime(local_date.year, local_date.month, local_date.day, 12, 0, 0, tzinfo=tz)
+            timestamp = int(dt.timestamp())
             target_date = local_date
 
             try:
