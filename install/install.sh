@@ -5,12 +5,14 @@
 # Description: This script automates the installation of InkyPI and creation of
 #              the InkyPI service.
 #
-# Usage: ./install.sh [-W <waveshare_device>]
+# Usage: ./install.sh [-W <waveshare_device>] [-S]
 #        -W <waveshare_device> (optional) Install for a Waveshare device,
 #                               specifying the device model type, e.g. epd7in3e.
 #
 #                               If not specified then the Pimoroni Inky display
 #                               is assumed.
+#        -S (optional) Install servo control support and enable PWM overlay.
+#                      If not specified, servo support is disabled.
 # =============================================================================
 
 # Formatting stuff
@@ -48,12 +50,22 @@ PIP_REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 WS_TYPE=""
 WS_REQUIREMENTS_FILE="$SCRIPT_DIR/ws-requirements.txt"
 
-# Parse the arguments, looking for the -W option.
+#
+# Additional requirements for Servo support.
+#
+# empty means no servo support required, otherwise install servo support
+SERVO_ENABLED=""
+SERVO_REQUIREMENTS_FILE="$SCRIPT_DIR/servo-requirements.txt"
+
+# Parse the arguments, looking for the -W and -S options.
 parse_arguments() {
-    while getopts ":W:" opt; do
+    while getopts ":W:S" opt; do
         case $opt in
             W) WS_TYPE=$OPTARG
                 echo "Optional parameter WS is set for Waveshare support.  Screen type is: $WS_TYPE"
+                ;;
+            S) SERVO_ENABLED="true"
+                echo "Optional parameter S is set for Servo control support."
                 ;;
             \?) echo "Invalid option: -$OPTARG." >&2
                 exit 1
@@ -140,22 +152,56 @@ enable_interfaces(){
   fi 
 }
 
+enable_pwm_overlay(){
+  # Only enable PWM overlay if servo support is requested
+  if [[ -z "$SERVO_ENABLED" ]]; then
+    return
+  fi
+
+  echo "Enabling PWM overlay for servo control"
+  local CONFIG_PRIMARY="/boot/firmware/config.txt"
+  local CONFIG_FALLBACK="/boot/config.txt"
+
+  for cfg in "$CONFIG_PRIMARY" "$CONFIG_FALLBACK"; do
+    if [ -f "$cfg" ]; then
+      if ! grep -E -q '^[[:space:]]*dtoverlay=pwm-2chan' "$cfg"; then
+          sed -i '/^dtparam=spi=on/a dtoverlay=pwm-2chan' "$cfg"
+          echo_success "\tPWM overlay enabled (pwm-2chan) in $cfg"
+      else
+          echo_success "\tPWM overlay already enabled in $cfg"
+      fi
+    fi
+  done
+}
+
 show_loader() {
-  local pid=$!
+  local message="$1"
+  local pid="${2:-$!}"
+
+  if [[ -z "$pid" ]]; then
+    echo_success "$message"
+    return 0
+  fi
+
   local delay=0.1
   local spinstr='|/-\'
-  printf "$1 [${spinstr:0:1}] "
-  while ps a | awk '{print $1}' | grep -q "${pid}"; do
+  printf '%s [%s] ' "$message" "${spinstr:0:1}"
+  while kill -0 "$pid" 2>/dev/null; do
     local temp=${spinstr#?}
-    printf "\r$1 [${temp:0:1}] "
+    printf '\r%s [%s] ' "$message" "${temp:0:1}"
     spinstr=${temp}${spinstr%"${temp}"}
     sleep ${delay}
   done
-  if [[ $? -eq 0 ]]; then
-    printf "\r$1 [\e[32m\xE2\x9C\x94\e[0m]\n"
+
+  wait "$pid"
+  local status=$?
+  if [[ $status -eq 0 ]]; then
+    printf '\r%s [\e[32m\xE2\x9C\x94\e[0m]\n' "$message"
   else
-    printf "\r$1 [\e[31m\xE2\x9C\x98\e[0m]\n"
+    printf '\r%s [\e[31m\xE2\x9C\x98\e[0m]\n' "$message"
   fi
+
+  return "$status"
 }
 
 echo_success() {
@@ -181,42 +227,97 @@ echo_blue() {
 
 install_debian_dependencies() {
   if [ -f "$APT_REQUIREMENTS_FILE" ]; then
-    sudo apt-get update > /dev/null &
-    show_loader "Fetch available system dependencies updates. " 
+    echo "Repairing interrupted package operations (if any)."
+    if ! sudo dpkg --configure -a; then
+      echo_error "ERROR: Failed to repair interrupted dpkg state. Please run 'sudo dpkg --configure -a' manually."
+      exit 1
+    fi
 
-    xargs -a "$APT_REQUIREMENTS_FILE" sudo apt-get install -y > /dev/null &
-    show_loader "Installing system dependencies. "
+    if ! sudo apt-get -f install -y > /dev/null; then
+      echo_error "ERROR: apt failed to repair broken dependencies."
+      exit 1
+    fi
+
+    echo "Fetching available system dependency updates."
+    if ! sudo apt-get update > /dev/null; then
+      echo_error "ERROR: Failed to fetch package updates via apt-get update."
+      exit 1
+    fi
+    echo_success "\tSystem package index updated"
+
+    echo "Installing system dependencies."
+    if ! xargs -a "$APT_REQUIREMENTS_FILE" sudo apt-get install -y > /dev/null; then
+      echo_error "ERROR: Failed to install one or more system dependencies from $APT_REQUIREMENTS_FILE"
+      exit 1
+    fi
+    echo_success "\tSystem dependencies installed"
   else
     echo "ERROR: System dependencies file $APT_REQUIREMENTS_FILE not found!"
     exit 1
   fi
 }
 
+install_servo_dependencies() {
+  echo "Installing servo dependencies (libgpiod and tools)."
+  sudo apt-get install -y gpiod python3-libgpiod libgpiod-dev > /dev/null
+}
+
 setup_zramswap_service() {
   echo "Enabling and starting zramswap service."
-  sudo apt-get install -y zram-tools > /dev/null
+  if ! sudo apt-get install -y zram-tools > /dev/null; then
+    echo_error "ERROR: Failed to install zram-tools."
+    exit 1
+  fi
   echo -e "ALGO=zstd\nPERCENT=60" | sudo tee /etc/default/zramswap > /dev/null
-  sudo systemctl enable --now zramswap
+  if ! sudo systemctl enable --now zramswap; then
+    echo_error "ERROR: Failed to enable/start zramswap service."
+    exit 1
+  fi
 }
 
 setup_earlyoom_service() {
   echo "Enabling and starting earlyoom service."
-  sudo apt-get install -y earlyoom > /dev/null
-  sudo systemctl enable --now earlyoom
+  if ! sudo apt-get install -y earlyoom > /dev/null; then
+    echo_error "ERROR: Failed to install earlyoom package."
+    exit 1
+  fi
+
+  if ! sudo systemctl enable --now earlyoom; then
+    echo_error "ERROR: Failed to enable/start earlyoom service."
+    exit 1
+  fi
 }
 
 create_venv(){
   echo "Creating python virtual environment. "
   python3 -m venv "$VENV_PATH"
-  $VENV_PATH/bin/python -m pip install --upgrade pip setuptools wheel > /dev/null
-  $VENV_PATH/bin/python -m pip install -r $PIP_REQUIREMENTS_FILE -qq > /dev/null &
-  show_loader "\tInstalling python dependencies. "
+  if ! $VENV_PATH/bin/python -m pip install --extra-index-url https://www.piwheels.org/simple --upgrade pip setuptools wheel > /dev/null; then
+    echo_error "ERROR: Failed to upgrade pip tooling inside virtual environment."
+    exit 1
+  fi
+
+  echo "Installing python dependencies."
+  if ! $VENV_PATH/bin/python -m pip install --extra-index-url https://www.piwheels.org/simple -r "$PIP_REQUIREMENTS_FILE" -qq > /dev/null; then
+    echo_error "ERROR: Failed to install Python dependencies from $PIP_REQUIREMENTS_FILE"
+    exit 1
+  fi
+  echo_success "\tPython dependencies installed"
 
   # do additional dependencies for Waveshare support.
   if [[ -n "$WS_TYPE" ]]; then
     echo "Adding additional dependencies for waveshare to the python virtual environment. "
-    $VENV_PATH/bin/python -m pip install -r $WS_REQUIREMENTS_FILE > ws_pip_install.log &
-    show_loader "\tInstalling additional Waveshare python dependencies. "
+    if ! $VENV_PATH/bin/python -m pip install --extra-index-url https://www.piwheels.org/simple -r "$WS_REQUIREMENTS_FILE" > ws_pip_install.log; then
+      echo_error "ERROR: Failed to install Waveshare Python dependencies from $WS_REQUIREMENTS_FILE"
+      exit 1
+    fi
+    echo_success "\tAdditional Waveshare python dependencies installed"
+  fi
+
+  # do additional dependencies for Servo support.
+  if [[ -n "$SERVO_ENABLED" ]]; then
+    echo "Adding additional dependencies for servo control to the python virtual environment. "
+    $VENV_PATH/bin/python -m pip install -r $SERVO_REQUIREMENTS_FILE > servo_pip_install.log &
+    show_loader "\tInstalling additional Servo python dependencies. "
   fi
 
 }
@@ -244,22 +345,26 @@ install_config() {
   CONFIG_DIR="$SRC_PATH/config"
   echo "Copying config files to $CONFIG_DIR"
 
-  # Check and copy device.config if it doesn't exist
+  # Check and copy device.json if it doesn't exist
   if [ ! -f "$CONFIG_DIR/device.json" ]; then
-    cp "$CONFIG_BASE_DIR/device.json" "$CONFIG_DIR/"
-    show_loader "\tCopying device.config to $CONFIG_DIR"
+    if cp "$CONFIG_BASE_DIR/device.json" "$CONFIG_DIR/"; then
+      echo_success "\tCopying device.json to $CONFIG_DIR"
+    else
+      echo_error "ERROR: Failed to copy device.json to $CONFIG_DIR"
+      exit 1
+    fi
   else
     echo_success "\tdevice.json already exists in $CONFIG_DIR"
   fi
 }
 
 #
-# Update the device.json file with the supplied Waveshare parameter (if set).
+# Update the device.json file with the supplied Waveshare and Servo parameters (if set).
 #
 update_config() {
+  local DEVICE_JSON="$CONFIG_DIR/device.json"
+  
   if [[ -n "$WS_TYPE" ]]; then
-      local DEVICE_JSON="$CONFIG_DIR/device.json"
-
       if grep -q '"display_type":' "$DEVICE_JSON"; then
           # Update existing display_type value
           sed -i "s/\"display_type\": \".*\"/\"display_type\": \"$WS_TYPE\"/" "$DEVICE_JSON"
@@ -273,8 +378,22 @@ update_config() {
           echo "}" >> "$DEVICE_JSON"  # Add trailing }
           echo "Added display_type: $WS_TYPE"
       fi
-  else
-      echo "Config not updated as WS_TYPE flag is not set"
+  fi
+
+  if [[ -n "$SERVO_ENABLED" ]]; then
+      if grep -q '"servo_enabled":' "$DEVICE_JSON"; then
+          # Update existing servo_enabled value
+          sed -i 's/"servo_enabled": false/"servo_enabled": true/' "$DEVICE_JSON"
+          echo "Updated servo_enabled to: true" 
+      else
+          # Append servo_enabled safely, ensuring proper comma placement
+          if grep -q '}$' "$DEVICE_JSON"; then
+              sed -i '$s/}/,/' "$DEVICE_JSON"  # Replace last } with a comma
+          fi
+          echo "  \"servo_enabled\": true" >> "$DEVICE_JSON"
+          echo "}" >> "$DEVICE_JSON"  # Add trailing }
+          echo "Added servo_enabled: true"
+      fi
   fi
 }
 
@@ -283,7 +402,11 @@ stop_service() {
     if /usr/bin/systemctl is-active --quiet $SERVICE_FILE
     then
       /usr/bin/systemctl stop $SERVICE_FILE > /dev/null &
-      show_loader "Stopping $APPNAME service"
+      local stop_pid=$!
+      if ! show_loader "Stopping $APPNAME service" "$stop_pid"; then
+        echo_error "ERROR: Failed to stop $SERVICE_FILE"
+        exit 1
+      fi
     else  
       echo_success "\t$SERVICE_FILE not running"
     fi
@@ -298,14 +421,22 @@ install_src() {
   # Check if an existing installation is present
   echo "Installing $APPNAME to $INSTALL_PATH"
   if [[ -d $INSTALL_PATH ]]; then
-    rm -rf "$INSTALL_PATH" > /dev/null
-    show_loader "\tRemoving existing installation found at $INSTALL_PATH"
+    if rm -rf "$INSTALL_PATH" > /dev/null; then
+      echo_success "\tRemoving existing installation found at $INSTALL_PATH"
+    else
+      echo_error "ERROR: Failed to remove existing installation at $INSTALL_PATH"
+      exit 1
+    fi
   fi
 
   mkdir -p "$INSTALL_PATH"
 
-  ln -sf "$SRC_PATH" "$INSTALL_PATH/src"
-  show_loader "\tCreating symlink from $SRC_PATH to $INSTALL_PATH/src"
+  if ln -sf "$SRC_PATH" "$INSTALL_PATH/src"; then
+    echo_success "\tCreating symlink from $SRC_PATH to $INSTALL_PATH/src"
+  else
+    echo_error "ERROR: Failed to create symlink from $SRC_PATH to $INSTALL_PATH/src"
+    exit 1
+  fi
 }
 
 install_cli() {
@@ -364,7 +495,12 @@ if [[ -n "$WS_TYPE" ]]; then
   fetch_waveshare_driver
 fi
 enable_interfaces
+enable_pwm_overlay
 install_debian_dependencies
+# Only install servo dependencies if servo support is requested
+if [[ -n "$SERVO_ENABLED" ]]; then
+  install_servo_dependencies
+fi
 # check OS version for Bookworm to setup zramswap
 if [[ $(get_os_version) = "12" ]] ; then
   echo "OS version is Bookworm - setting up zramswap"
@@ -378,8 +514,8 @@ install_cli
 create_venv
 install_executable
 install_config
-# update the config file with additional WS if defined.
-if [[ -n "$WS_TYPE" ]]; then
+# update the config file with additional WS or Servo if defined.
+if [[ -n "$WS_TYPE" ]] || [[ -n "$SERVO_ENABLED" ]]; then
   update_config
 fi
 install_app_service

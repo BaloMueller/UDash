@@ -51,13 +51,16 @@ class Calendar(BasePlugin):
         if not events:
             logger.warning("No events found for ics url")
 
-        if view == 'timeGridWeek' and settings.get("displayPreviousDays") != "true":
+        initial_date = None
+        if view == 'timeGridWeek':
             view = 'timeGrid'
+            initial_date = start.strftime("%Y-%m-%d")
 
         template_params = {
             "view": view,
             "events": events,
             "current_dt": current_dt.replace(minute=0, second=0, microsecond=0).isoformat(),
+            "initial_date": initial_date,
             "timezone": timezone,
             "plugin_settings": settings,
             "time_format": time_format,
@@ -74,7 +77,11 @@ class Calendar(BasePlugin):
         parsed_events = []
 
         for calendar_url, color in zip(calendar_urls, colors):
-            cal = self.fetch_calendar(calendar_url)
+            try:
+                cal = self.fetch_calendar(calendar_url)
+            except RuntimeError as e:
+                logger.warning(f"Skipping calendar due to fetch error: {e}")
+                continue
             events = recurring_ical_events.of(cal).between(start_range, end_range)
             contrast_color = self.get_contrast_color(color)
 
@@ -105,7 +112,7 @@ class Calendar(BasePlugin):
                 offset = (current_dt.weekday() - python_week_start) % 7
                 start = current_dt - timedelta(days=offset)
                 start = datetime(start.year, start.month, start.day)
-            end = start + timedelta(days=7)
+            end = start + timedelta(days=int(settings.get("numDays") or 7))
         elif view == "dayGrid":
             start = current_dt - timedelta(weeks=1)
             end = current_dt + timedelta(weeks=int(settings.get("displayWeeks") or 4))

@@ -24,6 +24,10 @@ class RefreshTask:
         self.condition = threading.Condition(self.lock)
         self.running = False
         self.manual_update_request = ()
+        
+        # Track refresh state for UI
+        self.is_refreshing = False
+        self.refresh_started_at = None
 
         self.refresh_event = threading.Event()
         self.refresh_event.set()
@@ -103,25 +107,43 @@ class RefreshTask:
                         logger.info(f"Running interval refresh check. | current_time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}")
                         playlist, plugin_instance = self._determine_next_plugin(playlist_manager, latest_refresh, current_dt)
                         if plugin_instance:
-                            refresh_action = PlaylistRefresh(playlist, plugin_instance)
+                            # Do not force regeneration here; let the PlaylistRefresh decide whether to
+                            # regenerate the plugin's image or load the cached image. This keeps
+                            # display rotation independent from image regeneration.
+                            refresh_action = PlaylistRefresh(playlist, plugin_instance, force=False)
 
                     if refresh_action:
                         plugin_config = self.device_config.get_plugin(refresh_action.get_plugin_id())
                         if plugin_config is None:
                             logger.error(f"Plugin config not found for '{refresh_action.get_plugin_id()}'.")
                             continue
-                        plugin = get_plugin_instance(plugin_config)
-                        image = refresh_action.execute(plugin, self.device_config, current_dt)
-                        image_hash = compute_image_hash(image)
+                        
+                        # Set refreshing state for UI before image generation
+                        self.is_refreshing = True
+                        self.refresh_started_at = time.time()
+                        
+                        try:
+                            plugin = get_plugin_instance(plugin_config)
+                            image = refresh_action.execute(plugin, self.device_config, current_dt)
 
-                        refresh_info = refresh_action.get_refresh_info()
-                        refresh_info.update({"refresh_time": current_dt.isoformat(), "image_hash": image_hash})
-                        # check if image is the same as current image
-                        if image_hash != latest_refresh.image_hash:
-                            logger.info(f"Updating display. | refresh_info: {refresh_info}")
-                            self.display_manager.display_image(image, image_settings=plugin.config.get("image_settings", []))
-                        else:
-                            logger.info(f"Image already displayed, skipping refresh. | refresh_info: {refresh_info}")
+                            # If execute returns None, the plugin was skipped (not time to refresh)
+                            if image is None:
+                                self.device_config.write_config()
+                                continue
+
+                            image_hash = compute_image_hash(image)
+
+                            refresh_info = refresh_action.get_refresh_info()
+                            refresh_info.update({"refresh_time": current_dt.isoformat(), "image_hash": image_hash})
+                            # check if image is the same as current image
+                            if image_hash != latest_refresh.image_hash:
+                                logger.info(f"Updating display. | refresh_info: {refresh_info}")
+                                self.display_manager.display_image(image, image_settings=plugin.config.get("image_settings", []))
+                            else:
+                                logger.debug(f"Image already displayed, skipping refresh. | refresh_info: {refresh_info}")
+                        finally:
+                            self.is_refreshing = False
+                            self.refresh_started_at = None
 
                         # update latest refresh data in the device config
                         self.device_config.refresh_info = RefreshInfo(**refresh_info)
@@ -143,7 +165,8 @@ class RefreshTask:
 
                 self.condition.notify_all()  # Wake the thread to process manual update
 
-            self.refresh_event.wait()
+            if not self.refresh_event.wait(timeout=300):
+                raise TimeoutError("Manual update timed out after 300 seconds")
             if self.refresh_result.get("exception"):
                 raise self.refresh_result.get("exception")
         else:
@@ -154,6 +177,13 @@ class RefreshTask:
         if self.running:
             with self.condition:
                 self.condition.notify_all()
+    
+    def get_status(self) -> dict:
+        """Get current refresh status for UI polling."""
+        return {
+            "is_refreshing": self.is_refreshing,
+            "refresh_duration": round(time.time() - self.refresh_started_at, 1) if self.refresh_started_at else None
+        }
 
     def _get_current_datetime(self):
         """Retrieves the current datetime based on the device's configured timezone."""
@@ -161,11 +191,19 @@ class RefreshTask:
         return datetime.now(pytz.timezone(tz_str))
 
     def _determine_next_plugin(self, playlist_manager, latest_refresh_info, current_dt):
-        """Determines the next plugin to refresh based on the active playlist, plugin cycle interval, and current time."""
+        """Determines the next plugin to refresh by scanning all plugins in the active playlist.
+
+        Collects every plugin whose should_refresh() returns True, computes each
+        one's effective due datetime, and selects the plugin that has been overdue
+        the longest (oldest due time).  Ties are broken by playlist order starting
+        from the round-robin index for fairness.
+
+        If no plugin is due, returns (None, None) so the display is not updated.
+        """
         playlist = playlist_manager.determine_active_playlist(current_dt)
         if not playlist:
             playlist_manager.active_playlist = None
-            logger.info(f"No active playlist determined.")
+            logger.info("No active playlist determined.")
             return None, None
 
         playlist_manager.active_playlist = playlist.name
@@ -173,19 +211,43 @@ class RefreshTask:
             logger.info(f"Active playlist '{playlist.name}' has no plugins.")
             return None, None
 
-        latest_refresh_dt = latest_refresh_info.get_refresh_datetime()
-        plugin_cycle_interval = self.device_config.get_config("plugin_cycle_interval_seconds", default=3600)
-        should_refresh = PlaylistManager.should_refresh(latest_refresh_dt, plugin_cycle_interval, current_dt)
+        # Collect all due plugins with their effective due datetimes
+        num_plugins = len(playlist.plugins)
+        start_index = ((playlist.current_plugin_index or -1) + 1) % num_plugins
+        due_plugins = []
 
-        if not should_refresh:
-            latest_refresh_str = latest_refresh_dt.strftime('%Y-%m-%d %H:%M:%S') if latest_refresh_dt else "None"
-            logger.info(f"Not time to update display. | latest_update: {latest_refresh_str} | plugin_cycle_interval: {plugin_cycle_interval}")
+        for i in range(num_plugins):
+            idx = (start_index + i) % num_plugins
+            plugin = playlist.plugins[idx]
+            if plugin.should_refresh(current_dt):
+                due_dt = plugin.get_due_datetime(current_dt)
+                due_plugins.append((due_dt, i, idx, plugin))  # i = scan order for tie-breaking
+                logger.debug(
+                    f"Plugin due: {plugin.name} | due_datetime: {due_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"| overdue_seconds: {(current_dt - due_dt).total_seconds():.0f}"
+                )
+
+        if not due_plugins:
+            logger.info(
+                f"No plugins due for refresh in playlist '{playlist.name}'. "
+                f"| checked: {num_plugins} plugin(s)"
+            )
             return None, None
 
-        plugin = playlist.get_next_plugin()
-        logger.info(f"Determined next plugin. | active_playlist: {playlist.name} | plugin_instance: {plugin.name}")
+        # Select the plugin with the oldest due time (most overdue).
+        # Ties broken by scan order (round-robin fairness).
+        due_plugins.sort(key=lambda x: (x[0], x[1]))
+        selected_due_dt, _, selected_idx, selected_plugin = due_plugins[0]
 
-        return playlist, plugin
+        playlist.current_plugin_index = selected_idx
+        logger.info(
+            f"Selected plugin for refresh. | active_playlist: {playlist.name} "
+            f"| plugin_instance: {selected_plugin.name} | index: {selected_idx} "
+            f"| due_datetime: {selected_due_dt.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"| overdue_seconds: {(current_dt - selected_due_dt).total_seconds():.0f} "
+            f"| total_due_plugins: {len(due_plugins)}"
+        )
+        return playlist, selected_plugin
     
     def log_system_stats(self):
         metrics = {
@@ -231,7 +293,10 @@ class ManualRefresh(RefreshAction):
 
     def execute(self, plugin, device_config, current_dt: datetime):
         """Performs a manual refresh using the stored plugin ID and settings."""
-        return plugin.generate_image(self.plugin_settings, device_config)
+        image = plugin.generate_image(self.plugin_settings, device_config)
+        if image is None:
+            raise RuntimeError(f"Plugin '{self.plugin_id}' failed to generate an image.")
+        return image
 
     def get_refresh_info(self):
         """Return refresh metadata as a dictionary."""
@@ -247,12 +312,15 @@ class PlaylistRefresh(RefreshAction):
     Attributes:
         playlist: The playlist object associated with the refresh.
         plugin_instance: The plugin instance to refresh.
+        force: If True, use cached image for quick navigation between plugins.
+        regenerate: If True, always generate a new image (for plugin state changes like button presses).
     """
 
-    def __init__(self, playlist, plugin_instance, force=False):
+    def __init__(self, playlist, plugin_instance, force=False, regenerate=False):
         self.playlist = playlist
         self.plugin_instance = plugin_instance
         self.force = force
+        self.regenerate = regenerate
 
     def get_refresh_info(self):
         """Return refresh metadata as a dictionary."""
@@ -272,17 +340,49 @@ class PlaylistRefresh(RefreshAction):
         # Determine the file path for the plugin's image
         plugin_image_path = os.path.join(device_config.plugin_image_dir, self.plugin_instance.get_image_path())
 
-        # Check if a refresh is needed based on the plugin instance's criteria
-        if self.plugin_instance.should_refresh(current_dt) or self.force:
-            logger.info(f"Refreshing plugin instance. | plugin_instance: '{self.plugin_instance.name}'") 
-            # Generate a new image
+        # Check if cached image exists
+        has_cached_image = os.path.exists(plugin_image_path)
+
+        # regenerate=True: always generate new image (plugin state changed, e.g. button press)
+        if self.regenerate:
+            logger.info(f"Regenerating image for plugin. | plugin_instance: '{self.plugin_instance.name}'")
             image = plugin.generate_image(self.plugin_instance.settings, device_config)
+            if image is None:
+                raise RuntimeError(f"Plugin '{self.plugin_instance.plugin_id}' failed to generate image")
             image.save(plugin_image_path)
             self.plugin_instance.latest_refresh_time = current_dt.isoformat()
-        else:
-            logger.info(f"Not time to refresh plugin instance, using latest image. | plugin_instance: {self.plugin_instance.name}.")
-            # Load the existing image from disk
-            with Image.open(plugin_image_path) as img:
-                image = img.copy()
+        # force=True: use cache if available (for quick navigation between plugins)
+        elif self.force:
+            if has_cached_image:
+                logger.info(f"Using cached image for navigation. | plugin_instance: {self.plugin_instance.name}")
+                with Image.open(plugin_image_path) as img:
+                    image = img.copy()
+            else:
+                logger.info(f"No cached image, generating. | plugin_instance: '{self.plugin_instance.name}'")
+                image = plugin.generate_image(self.plugin_instance.settings, device_config)
+                if image is None:
+                    raise RuntimeError(f"Plugin '{self.plugin_instance.plugin_id}' failed to generate image")
+                image.save(plugin_image_path)
+                self.plugin_instance.latest_refresh_time = current_dt.isoformat()
+        elif self.plugin_instance.should_refresh(current_dt) or not has_cached_image:
+            logger.info(f"Refreshing plugin instance. | plugin_instance: '{self.plugin_instance.name}'")
+            # Generate a new image
+            image = plugin.generate_image(self.plugin_instance.settings, device_config)
+            if image is None:
+                logger.error(f"Plugin '{self.plugin_instance.name}' returned no image. Skipping.")
+                return None
+            image.save(plugin_image_path)
+            self.plugin_instance.latest_refresh_time = current_dt.isoformat()
+            return image
 
-        return image
+        # Not time to regenerate — return None so the caller skips the display
+        # update.  The rotation index has already been advanced by
+        # get_next_plugin(), so the *next* cycle will evaluate the following
+        # plugin in the playlist.  This avoids unnecessary e-paper refreshes
+        # (which cause visible flashing) when no plugin has new content.
+        logger.info(
+            f"Not time to refresh plugin instance; skipping display update. "
+            f"| plugin_instance: {self.plugin_instance.name} "
+            f"| latest_refresh: {self.plugin_instance.latest_refresh_time}"
+        )
+        return None

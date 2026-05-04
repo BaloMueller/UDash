@@ -172,3 +172,8 @@ mock_display_output/
 # Static Files added by install/update_vendors.sh
 /src/static/scripts/
 /src/static/styles/
+._*
+.DS_Store
+src/config/device.json
+src/static/images/current_image.png
+/src/static/styles/select2.min.css

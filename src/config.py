@@ -20,6 +20,7 @@ class Config:
     plugin_image_dir = os.path.join(BASE_DIR, "static", "images", "plugins")
 
     def __init__(self):
+        load_dotenv(override=True)
         self.config = self.read_config()
         self.plugins_list = self.read_plugins_list()
         self.playlist_manager = self.load_playlist_manager()
@@ -60,21 +61,26 @@ class Config:
         with open(self.config_file, 'w') as outfile:
             json.dump(self.config, outfile, indent=4)
 
-    def get_config(self, key=None, default={}):
+    def get_config(self, key=None, default=None):
         """Gets the value of a specific configuration key or returns the entire config if none provided."""
         if key is not None:
-            return self.config.get(key, default)
+            return self.config.get(key, default if default is not None else {})
         return self.config
 
     def get_plugins(self):
-        """Returns the list of plugin configurations, sorted by custom order if set."""
+        """Returns the list of plugin configurations, sorted by custom order if set.
+        Disables servo_control plugin if servo_enabled is false in config."""
         plugin_order = self.config.get('plugin_order', [])
+        servo_enabled = self.config.get('servo_enabled', False)
+        
+        # Filter out servo_control plugin if servo is not enabled
+        filtered_plugins = [p for p in self.plugins_list if not (p['id'] == 'servo_control' and not servo_enabled)]
 
         if not plugin_order:
-            return self.plugins_list
+            return filtered_plugins
 
         # Create a dict for quick lookup
-        plugins_dict = {p['id']: p for p in self.plugins_list}
+        plugins_dict = {p['id']: p for p in filtered_plugins}
 
         # Build ordered list
         ordered = []
@@ -114,7 +120,6 @@ class Config:
 
     def load_env_key(self, key):
         """Loads an environment variable using dotenv and returns its value."""
-        load_dotenv(override=True)
         return os.getenv(key)
 
     def load_playlist_manager(self):

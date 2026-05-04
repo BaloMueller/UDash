@@ -11,16 +11,11 @@ logging.config.fileConfig(os.path.join(os.path.dirname(__file__), 'config', 'log
 import warnings
 warnings.filterwarnings("ignore", message=".*Busy Wait: Held high.*")
 
-import os
-import random
-import time
 import sys
-import json
 import logging
-import threading
 import argparse
 from utils.app_utils import generate_startup_image
-from flask import Flask, request, send_from_directory
+from flask import Flask, request
 from werkzeug.serving import is_running_from_reloader
 from config import Config
 from display.display_manager import DisplayManager
@@ -30,9 +25,12 @@ from blueprints.settings import settings_bp
 from blueprints.plugin import plugin_bp
 from blueprints.playlist import playlist_bp
 from blueprints.apikeys import apikeys_bp
+from blueprints.plugin_manager import plugin_manager_bp
+from blueprints.system_info import system_info_bp
 from jinja2 import ChoiceLoader, FileSystemLoader
-from plugins.plugin_registry import load_plugins
+from plugins.plugin_registry import load_plugins, get_plugin_instance, register_plugin_blueprints
 from waitress import serve
+from buttons import ButtonManager
 
 
 logger = logging.getLogger(__name__)
@@ -46,14 +44,29 @@ args = parser.parse_args()
 if args.dev:
     Config.config_file = os.path.join(Config.BASE_DIR, "config", "device_dev.json")
     DEV_MODE = True
-    PORT = 8080
-    logger.info("Starting InkyPi in DEVELOPMENT mode on port 8080")
+    PORT = int(os.environ.get('PORT', 8080))
+    logger.info(f"Starting InkyPi in DEVELOPMENT mode on port {PORT}")
 else:
     DEV_MODE = False
-    PORT = 80
-    logger.info("Starting InkyPi in PRODUCTION mode on port 80")
+    PORT = int(os.environ.get('PORT', 80))
+    logger.info(f"Starting InkyPi in PRODUCTION mode on port {PORT}")
 logging.getLogger('waitress.queue').setLevel(logging.ERROR)
+class IngressMiddleware:
+    """WSGI middleware to support Home Assistant ingress reverse proxy."""
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        ingress_path = environ.get('HTTP_X_INGRESS_PATH', '')
+        if ingress_path:
+            environ['SCRIPT_NAME'] = ingress_path
+            path_info = environ.get('PATH_INFO', '')
+            if path_info.startswith(ingress_path):
+                environ['PATH_INFO'] = path_info[len(ingress_path):]
+        return self.app(environ, start_response)
+
 app = Flask(__name__)
+app.wsgi_app = IngressMiddleware(app.wsgi_app)
 template_dirs = [
    os.path.join(os.path.dirname(__file__), "templates"),    # Default template folder
    os.path.join(os.path.dirname(__file__), "plugins"),      # Plugin templates
@@ -64,12 +77,30 @@ device_config = Config()
 display_manager = DisplayManager(device_config)
 refresh_task = RefreshTask(device_config, display_manager)
 
+# Initialize button handler based on mode and settings
+buttons_enabled = device_config.get_config("buttons_enabled", default=True)
+
+if buttons_enabled:
+    if DEV_MODE:
+        from buttons.mock_button_handler import MockButtonHandler
+        button_handler = MockButtonHandler()
+    else:
+        from buttons.gpio_button_handler import GPIOButtonHandler
+        button_pins = device_config.get_config("button_pins")
+        button_handler = GPIOButtonHandler(button_pins)
+    
+    button_manager = ButtonManager(button_handler, refresh_task, device_config, display_manager)
+else:
+    button_manager = None
+    logger.info("Hardware buttons disabled in settings")
+
 load_plugins(device_config.get_plugins())
 
 # Store dependencies
 app.config['DEVICE_CONFIG'] = device_config
 app.config['DISPLAY_MANAGER'] = display_manager
 app.config['REFRESH_TASK'] = refresh_task
+app.config['BUTTON_MANAGER'] = button_manager
 
 # Set additional parameters
 app.config['MAX_FORM_PARTS'] = 10_000
@@ -80,14 +111,21 @@ app.register_blueprint(settings_bp)
 app.register_blueprint(plugin_bp)
 app.register_blueprint(playlist_bp)
 app.register_blueprint(apikeys_bp)
+app.register_blueprint(plugin_manager_bp)
+app.register_blueprint(system_info_bp)
 
+
+# Register blueprints from plugins (generic mechanism - any plugin can expose blueprints)
+register_plugin_blueprints(app)
 # Register opener for HEIF/HEIC images
 register_heif_opener()
 
 if __name__ == '__main__':
 
-    # start the background refresh task
+    # start the background refresh task and button handler
     refresh_task.start()
+    if button_manager:
+        button_manager.start()
 
     # display default inkypi image on startup
     if device_config.get_config("startup") is True:
@@ -98,7 +136,7 @@ if __name__ == '__main__':
 
     try:
         # Run the Flask app
-        app.secret_key = str(random.randint(100000,999999))
+        app.secret_key = os.urandom(24).hex()
 
         # Get local IP address for display (only in dev mode when running on non-Pi)
         if DEV_MODE:
@@ -109,9 +147,11 @@ if __name__ == '__main__':
                 local_ip = s.getsockname()[0]
                 s.close()
                 logger.info(f"Serving on http://{local_ip}:{PORT}")
-            except:
+            except OSError:
                 pass  # Ignore if we can't get the IP
-
+            
         serve(app, host="0.0.0.0", port=PORT, threads=1)
     finally:
+        if button_manager:
+            button_manager.stop()
         refresh_task.stop()

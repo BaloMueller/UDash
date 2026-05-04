@@ -20,30 +20,34 @@ def get_image(image_url):
     return img
 
 def change_orientation(image, orientation, inverted=False):
-    if orientation == 'horizontal':
-        angle = 0
-    elif orientation == 'vertical':
+    if orientation == 'vertical':
         angle = 90
+    else:
+        angle = 0
 
     if inverted:
         angle = (angle + 180) % 360
 
     return image.rotate(angle, expand=1)
 
-def resize_image(image, desired_size, image_settings=[]):
+def resize_image(image, desired_size, image_settings=None):
+    if image_settings is None:
+        image_settings = []
     img_width, img_height = image.size
     desired_width, desired_height = desired_size
     desired_width, desired_height = int(desired_width), int(desired_height)
+
+    if img_height == 0 or desired_height == 0:
+        raise ValueError("Image dimensions must be non-zero")
 
     img_ratio = img_width / img_height
     desired_ratio = desired_width / desired_height
 
     keep_width = "keep-width" in image_settings
 
-    x_offset, y_offset = 0,0
-    new_width, new_height = img_width,img_height
+    x_offset, y_offset = 0, 0
+    new_width, new_height = img_width, img_height
     # Step 1: Determine crop dimensions
-    desired_ratio = desired_width / desired_height
     if img_ratio > desired_ratio:
         # Image is wider than desired aspect ratio
         new_width = int(img_height * desired_ratio)
@@ -61,7 +65,9 @@ def resize_image(image, desired_size, image_settings=[]):
     # Step 3: Resize to the exact desired dimensions (if necessary)
     return image.resize((desired_width, desired_height), Image.LANCZOS)
 
-def apply_image_enhancement(img, image_settings={}):
+def apply_image_enhancement(img, image_settings=None):
+    if image_settings is None:
+        image_settings = {}
     # Convert image to RGB mode if necessary for enhancement operations
     # ImageEnhance requires RGB mode for operations like blend
     if img.mode not in ('RGB', 'L'):
@@ -89,46 +95,50 @@ def compute_image_hash(image):
     return hashlib.sha256(img_bytes).hexdigest()
 
 def take_screenshot_html(html_str, dimensions, timeout_ms=None):
-    image = None
     try:
         # Create a temporary HTML file
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as html_file:
+        with tempfile.NamedTemporaryFile(suffix=".html") as html_file:
             html_file.write(html_str.encode("utf-8"))
+            html_file.flush()
             html_file_path = html_file.name
 
-        image = take_screenshot(html_file_path, dimensions, timeout_ms)
-
-        # Remove html file
-        os.remove(html_file_path)
+            return take_screenshot(html_file_path, dimensions, timeout_ms)
 
     except Exception as e:
         logger.error(f"Failed to take screenshot: {str(e)}")
+        return None
 
-    return image
 
 def _find_chromium_binary():
-    """Find the first available Chromium-based binary in system PATH."""
+    """Find the first available Chromium-based binary in system PATH or standard locations."""
+    # First, try to find in PATH
     candidates = ["chromium-headless-shell", "chromium", "chrome"]
     for candidate in candidates:
         path = shutil.which(candidate)
         if path:
             logger.debug(f"Found browser binary: {candidate} at {path}")
             return candidate
+
+    # On macOS, check standard Google Chrome location
+    if os.name == 'posix' and os.path.exists('/Applications'):
+        chrome_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(chrome_path):
+            logger.debug(f"Found browser binary: Google Chrome at {chrome_path}")
+            return chrome_path
+
     return None
 
 
 def take_screenshot(target, dimensions, timeout_ms=None):
-    image = None
-    try:
-        # Find available browser binary
-        browser = _find_chromium_binary()
-        if not browser:
-            logger.error("No Chromium-based browser found. Install chromium, chromium-headless-shell, or chrome.")
-            return None
+    # Find available browser binary
+    browser = _find_chromium_binary()
+    if not browser:
+        logger.error("No Chromium-based browser found. Install chromium, chromium-headless-shell, or chrome.")
+        return None
 
-        # Create a temporary output file for the screenshot
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as img_file:
-            img_file_path = img_file.name
+    # Create a temporary output file for the screenshot
+    with tempfile.NamedTemporaryFile(suffix=".png") as img_file:
+        img_file_path = img_file.name
 
         command = [
             browser,
@@ -146,31 +156,35 @@ def take_screenshot(target, dimensions, timeout_ms=None):
             "--disable-gpu-memory-buffer-compositor-resources",
             "--disable-extensions",
             "--disable-plugins",
-            "--mute-audio",
+            "--disable-default-apps",
+            "--disable-audio-input",
+            "--disable-audio-output",
+            "--disable-crash-reporter",
+            "--disable-login-animations",
+            "--disable-default-browser-promo",
             "--renderer-process-limit=1",
             "--no-zygote",
             "--no-sandbox"
         ]
         if timeout_ms:
             command.append(f"--timeout={timeout_ms}")
-        result = subprocess.run(command, capture_output=True, check=False)
 
-        # Check if the process failed or the output file is missing
-        if result.returncode != 0 or not os.path.exists(img_file_path):
-            logger.error(f"Failed to take screenshot (return code: {result.returncode})")
+        try:
+            result = subprocess.run(command, capture_output=True, check=False)
+
+            # Check if the process failed or the output file is missing
+            if result.returncode != 0 or not os.path.exists(img_file_path):
+                logger.error(f"Failed to take screenshot (return code: {result.returncode})")
+                return None
+
+            # Load the image using PIL
+            with Image.open(img_file_path) as img:
+                return img.copy()
+
+        except Exception as e:
+            logger.error(f"Failed to take screenshot: {str(e)}")
             return None
 
-        # Load the image using PIL
-        with Image.open(img_file_path) as img:
-            image = img.copy()
-
-        # Remove image files
-        os.remove(img_file_path)
-
-    except Exception as e:
-        logger.error(f"Failed to take screenshot: {str(e)}")
-
-    return image
 
 def pad_image_blur(img: Image, dimensions: tuple[int, int]) -> Image:
     bkg = ImageOps.fit(img, dimensions)

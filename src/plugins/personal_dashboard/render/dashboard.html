@@ -1,0 +1,65 @@
+{% extends "plugin.html" %}
+
+{% block content %}
+<div class="dashboard">
+
+  <!-- Header row: title + current date -->
+  <div class="header">
+    <span class="header-title">Personal Dashboard</span>
+    <span class="header-date">{{ current_date }}</span>
+  </div>
+
+  <!-- Three-column panel row -->
+  <div class="panels">
+
+    <!-- ── Temperature ─────────────────────────────────────────── -->
+    <div class="panel temperature-panel">
+      <div class="panel-label">Current Indoor Temperature</div>
+      {% if temperature %}
+        <div class="temp-value">{{ temperature }}</div>
+      {% else %}
+        <div class="temp-value temp-unavailable">—</div>
+        <div class="no-data">Sensor unavailable</div>
+      {% endif %}
+    </div>
+
+    <!-- ── Tomorrow's weather ──────────────────────────────────── -->
+    <div class="panel weather-panel">
+      <div class="panel-label">Tomorrow's Weather</div>
+      {% if weather %}
+        <div class="weather-weekday">{{ weather.weekday }}, {{ weather.date }}</div>
+        <div class="weather-hero">
+          <img class="weather-icon" src="{{ weather.icon }}" alt="{{ weather.description }}">
+        </div>
+        <div class="weather-desc">{{ weather.description }}</div>
+        <div class="weather-temps">
+          <span class="temp-high">&#8593; {{ weather.high }}{{ weather.unit }}</span>
+          <span class="temp-low">&#8595; {{ weather.low }}{{ weather.unit }}</span>
+        </div>
+      {% else %}
+        <div class="no-data">Set latitude &amp; longitude<br>in plugin settings</div>
+      {% endif %}
+    </div>
+
+    <!-- ── Upcoming birthdays ──────────────────────────────────── -->
+    <div class="panel birthdays-panel">
+      <div class="panel-label">Upcoming Birthdays</div>
+      {% if birthdays %}
+        <div class="birthday-list">
+          {% for b in birthdays %}
+          <div class="birthday-item">
+            <span class="birthday-name">{{ b.name }}</span>
+            <span class="birthday-meta">{{ b.date }} &bull; {{ b.when }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% elif not plugin_settings.birthdaysIcsUrl %}
+        <div class="no-data">Set a Birthdays ICS URL<br>in plugin settings</div>
+      {% else %}
+        <div class="no-data">None in the next {{ lookahead_days }} days</div>
+      {% endif %}
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /dashboard -->
+{% endblock %}

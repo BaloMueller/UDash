@@ -2,9 +2,11 @@ from flask import Blueprint, request, jsonify, current_app, render_template, sen
 from plugins.plugin_registry import get_plugin_instance
 from utils.app_utils import resolve_path, handle_request_files, parse_form
 from refresh_task import ManualRefresh, PlaylistRefresh
+import base64
 import json
-import os
 import logging
+import os
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 plugin_bp = Blueprint("plugin", __name__)
@@ -235,7 +237,9 @@ def update_now():
     try:
         plugin_settings = parse_form(request.form)
         plugin_settings.update(handle_request_files(request.files))
-        plugin_id = plugin_settings.pop("plugin_id")
+        plugin_id = plugin_settings.pop("plugin_id", None)
+        if not plugin_id:
+            return jsonify({"error": "plugin_id is required"}), 400
 
         # Check if refresh task is running
         if refresh_task.running:
@@ -249,10 +253,47 @@ def update_now():
 
             plugin = get_plugin_instance(plugin_config)
             image = plugin.generate_image(plugin_settings, device_config)
-            display_manager.display_image(image, image_settings=plugin_config.get("image_settings", []))
+            if image is None:
+                return jsonify({"error": f"Plugin '{plugin_id}' failed to generate an image."}), 500
+            display_manager.display_image(image, image_settings=plugin_config.get("image_settings") or [])
 
     except Exception as e:
         logger.exception(f"Error in update_now: {str(e)}")
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
     return jsonify({"success": True, "message": "Display updated"}), 200
+
+
+@plugin_bp.route('/preview', methods=['POST'])
+def preview():
+    """Generate a preview image without updating the display"""
+    device_config = current_app.config['DEVICE_CONFIG']
+
+    try:
+        plugin_settings = parse_form(request.form)
+        plugin_settings.update(handle_request_files(request.files))
+        plugin_id = plugin_settings.pop("plugin_id", None)
+        if not plugin_id:
+            return jsonify({"error": "plugin_id is required"}), 400
+
+        plugin_config = device_config.get_plugin(plugin_id)
+        if not plugin_config:
+            return jsonify({"error": f"Plugin '{plugin_id}' not found"}), 404
+
+        plugin = get_plugin_instance(plugin_config)
+        image = plugin.generate_image(plugin_settings, device_config)
+        if image is None:
+            return jsonify({"error": "An error occurred: NoneType — Chromium may not be installed"}), 500
+
+        buffer = BytesIO()
+        image.save(buffer, format='PNG')
+        image_b64 = base64.b64encode(buffer.getvalue()).decode()
+
+        return jsonify({
+            "success": True,
+            "image": f"data:image/png;base64,{image_b64}"
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Error in preview: {str(e)}")
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
