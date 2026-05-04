@@ -1,0 +1,14 @@
+<div class="form-group">
+    <div class="form-group">
+        <label for="id" class="form-label">Note id</label>
+        <input type="text" id="id" name="id" placeholder="Note id..." required class="form-input">
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (loadPluginSettings) {
+            document.getElementById('id').value = pluginSettings.id || '';
+        }
+    });
+</script>
