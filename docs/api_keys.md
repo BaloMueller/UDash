@@ -94,3 +94,34 @@ Required for the Image Album plugin for the Immich Provider
     ```
     IMMICH_KEY=your-key
     ```
+
+## Personal Dashboard Plugin
+
+The **Personal Dashboard** plugin requires no API keys. It uses:
+
+- **Device temperature** – read directly from Raspberry Pi hardware sensors (no configuration needed).
+- **Tomorrow's weather** – fetched from [Open-Meteo](https://open-meteo.com/), a free weather API that requires no key.
+  Configure latitude/longitude in the plugin settings.
+- **Upcoming birthdays** – fetched from a Google Calendar ICS feed.
+
+### Getting your Google Calendar Birthdays ICS URL
+
+1. Open [Google Calendar](https://calendar.google.com) in a browser.
+2. In the left sidebar, hover over the **Birthdays** calendar and click the three-dot menu → **Settings**.
+3. Scroll down to the **Integrate calendar** section.
+4. Copy the **Secret address in iCal format** (it looks like
+   `https://calendar.google.com/calendar/ical/…/basic.ics`).
+5. Paste this URL into the **Birthdays ICS URL** field in the plugin settings.
+
+> **Note:** This URL gives read access to your calendar. Treat it like a password – do not share it publicly.
+
+### Making the dashboard always-on
+
+To keep the Personal Dashboard permanently on screen:
+
+1. In the UDash web UI, create a new playlist named **"Always On"** with start time `00:00` and end time `24:00`.
+2. Add the **Personal Dashboard** plugin instance to that playlist.
+3. Set the plugin's refresh interval to **15 minutes** (or any cadence you prefer).
+4. Remove or set narrower time windows on any other playlists so they do not compete.
+
+The dashboard will now be the only plugin selected by the scheduler at all times.

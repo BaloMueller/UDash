@@ -1,0 +1,160 @@
+{
+  "session_date": "2026-05-04",
+  "request_summary": "Implement an always-on single dashboard screen plugin for UDash showing Raspberry Pi temperature, tomorrow weather, and upcoming birthdays.",
+  "requirements_discussion": {
+    "initial_user_goal": [
+      "One persistent screen instead of rotating plugins",
+      "Current temperature from Raspberry Pi internal sensors",
+      "Tomorrow weather forecast",
+      "Upcoming birthdays from Google contacts"
+    ],
+    "scoping_decisions_confirmed": [
+      "Birthday source: Google Calendar birthdays via ICS URL (easier path)",
+      "Always-on behavior: only one dashboard plugin in one all-day playlist",
+      "Refresh cadence: every 15 minutes",
+      "Weather provider preference: no preference"
+    ]
+  },
+  "architecture_memory": {
+    "scheduler": {
+      "file": "src/refresh_task.py",
+      "notes": [
+        "_determine_next_plugin selects due plugin from active playlist",
+        "No scheduler core change required for selected approach",
+        "Always-on can be achieved operationally via playlist configuration"
+      ]
+    },
+    "playlist_model": {
+      "file": "src/model.py",
+      "notes": [
+        "PlaylistManager determines active playlist by time window",
+        "Plugin instances use interval/scheduled refresh semantics"
+      ]
+    },
+    "plugin_rendering": {
+      "file": "src/plugins/base_plugin/base_plugin.py",
+      "notes": [
+        "Use BasePlugin.generate_image contract",
+        "Use render_image with Jinja template + CSS",
+        "Display target is 800x480 horizontal by default"
+      ]
+    }
+  },
+  "data_source_memory": {
+    "temperature": {
+      "source_file": "src/blueprints/system_info.py",
+      "function": "_get_temperature",
+      "strategy": [
+        "psutil sensors",
+        "vcgencmd measure_temp",
+        "/sys/class/thermal/thermal_zone0/temp"
+      ]
+    },
+    "weather": {
+      "source_file": "src/plugins/weather/weather.py",
+      "notes": [
+        "Existing plugin supports OpenWeatherMap and Open-Meteo",
+        "Tomorrow forecast can be derived from daily forecast arrays",
+        "Open-Meteo requires no API key"
+      ]
+    },
+    "birthdays": {
+      "source_files": [
+        "src/plugins/calendar/calendar.py",
+        "src/plugins/keep/keep.py"
+      ],
+      "notes": [
+        "Calendar plugin already uses ICS and recurring_ical_events",
+        "Keep plugin uses non-OAuth Google auth; not suitable for contacts birthdays",
+        "Direct Google Contacts API would require OAuth2 and new dependencies"
+      ]
+    }
+  },
+  "implementation_memory": {
+    "created_files": [
+      "src/plugins/personal_dashboard/plugin-info.json",
+      "src/plugins/personal_dashboard/personal_dashboard.py",
+      "src/plugins/personal_dashboard/render/dashboard.html",
+      "src/plugins/personal_dashboard/render/dashboard.css",
+      "src/plugins/personal_dashboard/settings.html",
+      "src/plugins/personal_dashboard/session_memory.json"
+    ],
+    "modified_files": [
+      "docs/api_keys.md"
+    ],
+    "plugin_behavior": {
+      "class": "PersonalDashboard",
+      "module": "src/plugins/personal_dashboard/personal_dashboard.py",
+      "summary": [
+        "Renders one composite dashboard image",
+        "Reads device temperature with 3-level fallback",
+        "Fetches tomorrow weather via Open-Meteo",
+        "Fetches upcoming birthdays from ICS feed using recurring_ical_events",
+        "Limits displayed birthdays to 8 entries"
+      ]
+    },
+    "settings_intent": [
+      "latitude",
+      "longitude",
+      "units",
+      "birthdaysIcsUrl",
+      "birthdayLookaheadDays"
+    ],
+    "docs_added": {
+      "file": "docs/api_keys.md",
+      "notes": [
+        "Personal Dashboard setup guidance",
+        "How to get Google Calendar Birthdays ICS URL",
+        "Always-on playlist operation instructions"
+      ]
+    }
+  },
+  "validation_memory": {
+    "checks_run": [
+      {
+        "type": "import_and_instantiation",
+        "command_context": "python in src/ importing PersonalDashboard",
+        "result": "pass"
+      },
+      {
+        "type": "method_presence",
+        "result": "pass",
+        "methods": [
+          "_get_device_temperature",
+          "_get_tomorrow_weather",
+          "_get_upcoming_birthdays",
+          "generate_image"
+        ]
+      },
+      {
+        "type": "dev_temperature_probe",
+        "result": "None on macOS dev host (expected non-Pi behavior)"
+      },
+      {
+        "type": "diagnostics",
+        "tool": "get_errors",
+        "target": "src/plugins/personal_dashboard",
+        "result": "No errors found"
+      }
+    ]
+  },
+  "state_memory": {
+    "important_change_after_implementation": [
+      "User reverted src/plugins/personal_dashboard/settings.html",
+      "Current state confirmed: settings.html exists but is empty"
+    ],
+    "current_plugin_directory_listing": [
+      ".DS_Store",
+      "__pycache__/",
+      "personal_dashboard.py",
+      "plugin-info.json",
+      "render/",
+      "settings.html",
+      "session_memory.json"
+    ]
+  },
+  "future_memory": {
+    "phase_2_option": "If strict Google Contacts birthdays are required, add OAuth2 + Google People API integration instead of ICS.",
+    "operational_note": "For always-on behavior, run one all-day playlist with only this plugin and a 15-minute refresh interval."
+  }
+}
